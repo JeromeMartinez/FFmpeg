@@ -203,6 +203,7 @@ typedef struct EXRContext {
 
     Float2HalfTables f2h_tables;
     Half2FloatTables h2f_tables;
+    int consider_float16_as_uint16;
 } EXRContext;
 
 static int zip_uncompress(const EXRContext *s, const uint8_t *src, int compressed_size,
@@ -1491,7 +1492,7 @@ static int decode_block(AVCodecContext *avctx, void *tdata,
         }
     } else {
 
-        av_assert1(s->pixel_type == EXR_UINT);
+        av_assert1(s->pixel_type == EXR_UINT || (s->consider_float16_as_uint16 && s->pixel_type == EXR_HALF));
         ptr = p->data[0] + window_ymin * p->linesize[0] + (window_xmin * s->desc->nb_components * 2);
 
         for (i = 0; i < ysize; i++, ptr += p->linesize[0]) {
@@ -1515,11 +1516,11 @@ static int decode_block(AVCodecContext *avctx, void *tdata,
 
             for (x = 0; x < xsize; x++) {
                 for (c = 0; c < rgb_channel_count; c++) {
-                    *ptr_x++ = bytestream_get_le32(&rgb[c]) >> 16;
+                    *ptr_x++ = s->pixel_type == EXR_UINT ? (bytestream_get_le32(&rgb[c]) >> 16) : bytestream_get_le16(&rgb[c]);
                 }
 
                 if (channel_buffer[3])
-                    *ptr_x++ = bytestream_get_le32(&a) >> 16;
+                    *ptr_x++ = s->pixel_type == EXR_UINT ? (bytestream_get_le32(&rgb[c]) >> 16) : bytestream_get_le16(&rgb[c]);
             }
 
             // Zero out the end if xmax+1 is not w
@@ -2134,6 +2135,29 @@ static int decode_frame(AVCodecContext *avctx, AVFrame *picture,
 
     switch (s->pixel_type) {
     case EXR_HALF:
+        if (s->consider_float16_as_uint16)
+        {
+          if (s->channel_offsets[3] >= 0) {
+              if (!s->is_luma) {
+                  avctx->pix_fmt = AV_PIX_FMT_RGBA64;
+              } else {
+                  avctx->pix_fmt = AV_PIX_FMT_YA16;
+              }
+          } else {
+              if (!s->is_luma) {
+                  avctx->pix_fmt = AV_PIX_FMT_RGB48;
+              } else {
+                  avctx->pix_fmt = AV_PIX_FMT_GRAY16;
+              }
+          }
+          if (avctx->pix_fmt != AV_PIX_FMT_RGB48 || s->apply_trc_type != AVCOL_TRC_UNSPECIFIED || s->compression != EXR_RAW)
+          {
+            av_log(avctx, AV_LOG_ERROR, "consider_float16_as_uint16 not tested with this config.\n");
+            return AVERROR_PATCHWELCOME;
+          }
+          break;
+        }
+
         if (s->channel_offsets[3] >= 0) {
             if (!s->is_luma) {
                 avctx->pix_fmt = AV_PIX_FMT_GBRAPF16;
@@ -2393,6 +2417,8 @@ static av_cold int decode_end(AVCodecContext *avctx)
 #define OFFSET(x) offsetof(EXRContext, x)
 #define VD AV_OPT_FLAG_VIDEO_PARAM | AV_OPT_FLAG_DECODING_PARAM
 static const AVOption options[] = {
+    { "consider_float16_as_uint16", "consider_float16_as_uint16", OFFSET(consider_float16_as_uint16),
+        AV_OPT_TYPE_BOOL, {.i64 = 0 }, 0, 1, VD },
     { "layer", "Set the decoding layer", OFFSET(layer),
         AV_OPT_TYPE_STRING, { .str = "" }, 0, 0, VD },
     { "part",  "Set the decoding part", OFFSET(selected_part),
