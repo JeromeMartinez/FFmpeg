@@ -288,13 +288,6 @@ static av_cold int flac_encode_init(AVCodecContext *avctx)
                 av_log(avctx, AV_LOG_WARNING, "encoding as 24 bits-per-sample\n");
             avctx->bits_per_raw_sample = 24;
             s->bps_code                = 6;
-        } else if (avctx->strict_std_compliance > FF_COMPLIANCE_EXPERIMENTAL) {
-            av_log(avctx, AV_LOG_WARNING,
-                   "encoding as 24 bits-per-sample, more is considered "
-                   "experimental. Add -strict experimental if you want "
-                   "to encode more than 24 bits-per-sample\n");
-            avctx->bits_per_raw_sample = 24;
-            s->bps_code                = 6;
         } else {
             avctx->bits_per_raw_sample = 32;
             s->bps_code = 7;
