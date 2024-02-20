@@ -120,6 +120,11 @@ typedef struct Jpeg2000DecoderContext {
 
     /*options parameters*/
     int             reduction_factor;
+    
+    /* field info */
+    int8_t          has_2_fields;
+    int8_t          is_bottom_coded_first;
+    int8_t          is_second_field;
 } Jpeg2000DecoderContext;
 
 #endif //AVCODEC_JPEG2000DEC_H
