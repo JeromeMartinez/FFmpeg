@@ -196,4 +196,26 @@ int av_timecode_init_from_string(AVTimecode *tc, AVRational rate, const char *st
  */
 int av_timecode_check_frame_rate(AVRational rate);
 
+/**
+ * Convert a 32-bit SMPTE 12M timecode to 64-bit SMPTE 12M/RFC 5484 format.
+ *
+ * This maps the timecode as described in RFC 5484 Section 6.2,
+ * expanding BCD-encoded time values into bit fields without the sync word.
+ *
+ * @param tc32  The 32-bit SMPTE timecode (from DeckLink or av_timecode_get_smpte)
+ * @return      The 64-bit SMPTE 12M timecode format (without sync word)
+ */
+uint64_t av_timecode_expand_to_64bit(uint32_t tc32);
+
+/**
+ * Convert a 64-bit SMPTE 12M/RFC 5484 timecode to 32-bit SMPTE format.
+ *
+ * This reconstructs the packed 32-bit SMPTE timecode (DeckLink-style or FFmpeg output)
+ * from a full 64-bit representation.
+ *
+ * @param tc64 The 64-bit timecode value in RFC 5484 / SMPTE 12M format (without sync word)
+ * @return     A 32-bit SMPTE timecode
+ */
+uint32_t av_timecode_parse_from_64bit(uint64_t tc64);
+
 #endif /* AVUTIL_TIMECODE_H */
