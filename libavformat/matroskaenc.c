@@ -210,6 +210,7 @@ typedef struct mkv_track {
     int64_t         ts_offset;
     uint64_t        default_duration_low;
     uint64_t        default_duration_high;
+    uint64_t*       timecodes[100];
     /* This callback will be called twice: First with a NULL AVIOContext
      * to return the size of the (Simple)Block's data via size
      * and a second time with the AVIOContext set when the data
@@ -269,6 +270,8 @@ typedef struct MatroskaMuxContext {
     int                 flipped_raw_rgb;
     int                 default_mode;
     int                 move_cues_to_front;
+    
+    const char*         mediatimecode;
 
     uint32_t            segment_uid[4];
 } MatroskaMuxContext;
@@ -1709,6 +1712,1038 @@ fail:
     return AVERROR(EINVAL);
 }
 
+/* Below is the license of the XML parser, and only it */
+
+/* Copyright (c) MediaArea.net SARL
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+(MIT License)
+
+*/
+
+/*
+ * Tiny Fast Streamable XML parser
+ */
+
+#ifndef TFSXML_H
+#define TFSXML_H
+
+#ifdef __cplusplus
+extern "C"
+{
+#endif /* __cplusplus */
+
+/** -------------------------------------------------------------------------
+        Splitting of the XML content in blocks
+------------------------------------------------------------------------- **/
+
+/** Base structure for the parser
+ *
+ * @param buf  pointer to the buffer which has the data
+ * @param len  length of the buffer
+ * @param flags  private data, can change between versions of the library
+ *
+ * @note after init, priv should not be directly used (data may be something else than a buf/len pair)
+ */
+typedef struct tfsxml_string {
+    const char* buf;
+    unsigned    len;
+    unsigned    flags;
+} tfsxml_string;
+
+/** Initialize the parser
+ *
+ * @param priv      pointer to a tfsxml_string dedicated instance, private use by the parser
+ * @param buf       pointer to start of the buffer
+ * @param len       length of the buffer
+ * @param version   API version supported by the client
+ *
+ * @note after init, priv should not be directly used (data may be something else than a buf/len pair)
+ */
+int tfsxml_init(tfsxml_string* priv, const void* buf, unsigned len, unsigned version);
+
+/** Get next element or other content except an element value
+ *
+ * @param priv  pointer to a tfsxml_string dedicated instance, private use by the parser
+ * @param n  pointer to tfsxml_string instance receiving the element name or other content
+ *
+ * @return  0 if an element is available at the current level
+ *          -1 if no element is available at the current level
+ *          1 if need of more data
+ */
+int tfsxml_next(tfsxml_string* priv, tfsxml_string* n);
+
+/** Get next attribute of an element
+ *
+ * @param priv  pointer to a tfsxml_string dedicated instance, private use by the parser
+ * @param n  pointer to tfsxml_string instance receiving the attribute name
+ * @param v  pointer to tfsxml_string instance receiving the attribute value
+ *
+ * @return  0 if an attribute is available for the current element
+ *          -1 if no more attribute is available for the current element
+ *          1 if need of more data
+ */
+int tfsxml_attr(tfsxml_string* priv, tfsxml_string* n, tfsxml_string* v);
+
+/** Get next value of an element
+ *
+ * @param priv  pointer to a tfsxml_string dedicated instance, private use by the parser
+ * @param v  pointer to tfsxml_string instance receiving the value
+ *
+ * @return  0 if a value is available for the current element
+ *          -1 if no value is available for the current element
+ *          1 if need of more data
+ *
+ * @note if this element has sub-elements, the whole content (all sub-elements) are provided
+ */
+int tfsxml_value(tfsxml_string* priv, tfsxml_string* v);
+
+/** Enter in the element in order to get sub-elements
+ *
+ * @param priv  pointer to a tfsxml_string dedicated instance, private use by the parser
+ *
+ * @return  0 if it is possible to enter in an element
+ *          -1 if it is not possible to enter in an element
+ *          1 if need of more data
+ */
+int tfsxml_enter(tfsxml_string* priv);
+
+/** Leave the current parsed element (going to upper level)
+ *
+ * @param priv  pointer to a tfsxml_string dedicated instance, private use by the parser
+ *
+ * @return  0 if it is possible to leave an element
+ *          -1 if it is not possible to leave an element
+ *          1 if need of more data
+ */
+int tfsxml_leave(tfsxml_string* priv);
+
+/** -------------------------------------------------------------------------
+        Handling the encoded XML block
+------------------------------------------------------------------------- **/
+
+/** Convert encoded XML block (attribute or value) to real content (encoded in UTF-8)
+ *
+ * @param s         opaque data transmitted to func
+ * @param v         XML content to decode
+ * @param func      append function that will receive blocks of decoded content
+ *
+ * @param func_s    string to append to
+ * @param func_buf  decoded content
+ * @param func_len  length of the decoded content
+ *
+ * @note see tfsxml_decode_string C++ function for an example of usage
+ */
+void tfsxml_decode(void* s, const tfsxml_string* v, void (*func)(void* func_s, const char* func_buf, unsigned func_len));
+
+/** -------------------------------------------------------------------------
+        Helper functions related to tfsxml_string
+------------------------------------------------------------------------- **/
+
+/** Compare two strings
+ *
+ * @param a  string to compare
+ * @param b  string to compare
+ *
+ * @note similar to C strcmp function
+ */
+int tfsxml_strcmp_charp(tfsxml_string a, const char* b);
+
+/** Locate substring
+ *
+ * @param a  string to be scanned
+ * @param b  substring to match
+ *
+ * @note similar to C strstr function
+ */
+tfsxml_string tfsxml_strstr_charp(tfsxml_string a, const char* b);
+
+#ifdef __cplusplus
+}
+#endif /* __cplusplus */
+
+#ifdef __cplusplus
+#include <string>
+
+static void tfsxml_decode_string(void* d, const char* buf, unsigned len) { ((std::string*)d)->append(buf, len); }
+
+/** Convert encoded XML block (attribute or value) to real content (encoded in UTF-8)
+ *
+ * @param s  string which will be appended with the decoded content
+ * @param b  XML content to decode
+ */
+static void tfsxml_decode(std::string& s, const tfsxml_string& b) { tfsxml_decode(&s, &b, tfsxml_decode_string); }
+
+/** Convert encoded XML block (attribute or value) to real content (encoded in UTF-8)
+ *
+ * @param b  XML content to decode
+ * @return  decoded content
+ */
+static std::string tfsxml_decode(const tfsxml_string& b) { std::string s; tfsxml_decode(&s, &b, tfsxml_decode_string); return s; }
+
+#endif /* __cplusplus */
+
+#endif
+
+#ifndef NULL
+    #ifdef __cplusplus
+        #define NULL 0
+    #else
+        #define NULL ((void *)0)
+    #endif
+#endif
+#if !defined(inline)
+    #define inline
+#endif
+
+/*
+ * priv flags :
+ * 0: is inside an element header
+ * 1: previous element is open (potentially with sub elements)
+ */
+
+/*
+ * attribute / value flags :
+ * 0: must be decoded
+ */
+
+static inline void set_flag(tfsxml_string* priv, int offset) {
+    priv->flags |= (1 << offset);
+}
+
+static inline int get_flag(tfsxml_string* priv, int offset) {
+    return priv->flags & (1 << offset);
+}
+
+static inline void unset_flag(tfsxml_string* priv, int offset) {
+    priv->flags &= ~(1 << offset);
+}
+
+#define set_is_in_element_header() set_flag(priv, 0)
+#define get_is_in_element_header() get_flag(priv, 0)
+#define unset_is_in_element_header() unset_flag(priv, 0)
+#define set_previous_element_is_open() set_flag(priv, 1)
+#define get_previous_element_is_open() get_flag(priv, 1)
+#define unset_previous_element_is_open() unset_flag(priv, 1)
+
+#define set_must_be_decoded() set_flag(v, 0)
+
+static inline void set_level(tfsxml_string* priv, int level)
+{
+    const int offset = (sizeof(priv->flags) - 1) * 8;
+    priv->flags <<= 8;
+    priv->flags >>= 8;
+    priv->flags |= level << offset;
+}
+
+static inline void get_level(tfsxml_string* priv, int* level)
+{
+    const int offset = (sizeof(priv->flags) - 1) * 8;
+    *level = priv->flags >> offset;
+}
+
+static inline void next_char(tfsxml_string* priv) {
+    priv->buf++;
+    priv->len--;
+}
+
+static int tfsxml_leave_element_header(tfsxml_string* priv) {
+    /* Skip attributes */
+    tfsxml_string n, v;
+    for (;;) {
+        int result = tfsxml_attr(priv, &n, &v);
+        switch (result) {
+            case -1: {
+                return 0;
+            }
+            case 1: {
+                return 1;
+            }
+            default: {
+            }
+        }
+    }
+}
+
+int tfsxml_strcmp_charp(tfsxml_string a, const char* b) {
+    /* Compare char per char and return the difference if chars are no equal */
+    for (; a.len && *b; a.buf++, a.len--, b++) {
+        int c = *a.buf - *b;
+        if (c)
+            return c;
+    }
+
+    if (!a.len && !*b)
+        return 0; /* All equal */
+    else if (*b)
+        return -*b; /* b is longer than a */
+    else
+        return *a.buf; /* a is longer than b */
+}
+
+tfsxml_string tfsxml_strstr_charp(tfsxml_string a, const char* b) {
+    /* Iterate string to be scanned */
+    for (; a.len; a.buf++, a.len--) {
+        const char* buf = a.buf;
+        int len = a.len;
+        const char* bb = b;
+        /* Compare char per char */
+        for (; len && *bb; buf++, len--, bb++) {
+            char c = *buf - *bb;
+            if (c)
+                break;
+        }
+        if (!len || *bb) {
+            return a;
+        }
+    }
+    a.buf = NULL;
+    a.len = 0;
+    return a;
+}
+
+int tfsxml_init(tfsxml_string* priv, const void* buf, unsigned len, unsigned version) {
+    const char* buf_8 = (const char*)buf;
+
+    if (version != 0) {
+        return -1;
+    }
+
+    /* BOM detection */
+    if (len > 3
+        && (unsigned char)buf_8[0] == 0xEF
+        && (unsigned char)buf_8[1] == 0xBB
+        && (unsigned char)buf_8[2] == 0xBF) {
+        buf_8 += 3;
+        len -= 3;
+    }
+
+    /* Start detection */
+    if (len < 1
+        || buf_8[0] != '<') {
+        return -1;
+    }
+
+    /* Init */
+    priv->buf = (const char*)buf;
+    priv->len = len;
+    priv->flags = 0;
+
+    return 0;
+}
+
+int tfsxml_next(tfsxml_string* priv, tfsxml_string* n) {
+    tfsxml_string priv_bak;
+    int level;
+
+    get_level(priv, &level);
+
+    /* Exiting previous element header analysis if needed */
+    if (!level && get_is_in_element_header()) {
+        int result = tfsxml_leave_element_header(priv);
+        if (result) {
+            return result;
+        }
+    }
+
+    /* Leaving previous element content if needed */
+    if (level || get_previous_element_is_open()) {
+        if (!level && get_previous_element_is_open()) {
+            level++;
+            set_level(priv, level);
+        }
+        int result = tfsxml_leave(priv);
+        if (result) {
+            return result;
+        }
+        get_level(priv, &level);
+    }
+
+    priv_bak = *priv;
+    while (priv->len) {
+        switch (*priv->buf) {
+            case '<': {
+                if (priv->len == 1) {
+                    *priv = priv_bak;
+                    set_level(priv, level);
+                    return 1;
+                }
+                if (priv->buf[1] == '/') {
+                    while (priv->len && *priv->buf != '>') {
+                        next_char(priv);
+                    }
+                    if (!priv->len) {
+                        *priv = priv_bak;
+                        set_level(priv, level);
+                        return 1;
+                    }
+                    if (!level) {
+                        next_char(priv);
+                        unset_previous_element_is_open();
+                        set_level(priv, level);
+                        return -1;
+                    }
+                    level--;
+                    break;
+                }
+                if (priv->buf[1] == '?') {
+                    next_char(priv);
+                    n->buf = priv->buf;
+                    while (priv->len && *priv->buf != '>') {
+                        next_char(priv);
+                    }
+                    if (!priv->len) {
+                        *priv = priv_bak;
+                        set_level(priv, level);
+                        return 1;
+                    }
+                    n->len = priv->buf - n->buf;
+                    next_char(priv);
+                    unset_previous_element_is_open();
+                    set_level(priv, 0);
+                    return 0;
+                }
+                if (priv->buf[1] == '!') {
+                    unsigned long long probe = 0;
+                    int i;
+                    if (priv->len <= 8) {
+                        *priv = priv_bak;
+                        set_level(priv, level);
+                        return 1;
+                    }
+                    for (i = 2; i <= 8; i++) {
+                        probe <<= 8;
+                        probe |= priv->buf[i];
+                    }
+                    if (probe == 0x5B43444154415BULL) { /* "<![CDATA[" */
+                        probe = 0;
+                        priv->buf += 9;
+                        priv->len -= 9;
+                        while (priv->len) {
+                            probe &= 0xFFFF;
+                            probe <<= 8;
+                            probe |= *priv->buf;
+                            if (probe == 0x5D5D3EULL) { /* "]]>" */
+                                break;
+                            }
+                            next_char(priv);
+                        }
+                        if (!priv->len) {
+                            *priv = priv_bak;
+                            set_level(priv, level);
+                            return 1;
+                        }
+                        break;
+                    }
+                    if ((probe >> 40) == 0x2D2D) { /* "<!--" */
+                        n->buf = priv->buf;
+                        probe = 0;
+                        priv->buf += 4;
+                        priv->len -= 4;
+                        while (priv->len) {
+                            probe &= 0xFFFF;
+                            probe <<= 8;
+                            probe |= *priv->buf;
+                            if (probe == 0x2D2D3EULL) /* "-->" */
+                                break;
+                            next_char(priv);
+                        }
+                        if (!priv->len) {
+                            *priv = priv_bak;
+                            set_level(priv, level);
+                            return 1;
+                        }
+                        n->len = priv->buf - n->buf;
+                        next_char(priv);
+                        unset_previous_element_is_open();
+                        set_level(priv, 0);
+                        return 0;
+                    }
+                    while (priv->len && *priv->buf != '>') {
+                        next_char(priv);
+                    }
+                    if (!priv->len) {
+                        *priv = priv_bak;
+                        set_level(priv, level);
+                        return 1;
+                    }
+                    n->buf = priv_bak.buf;
+                    n->len = priv->buf - n->buf;
+                    next_char(priv);
+                    unset_previous_element_is_open();
+                    set_level(priv, 0);
+                    return 0;
+                }
+                if (!level) {
+                    next_char(priv);
+                    n->buf = priv->buf;
+                    for (;;) {
+                        if (!priv->len) {
+                            *priv = priv_bak;
+                            set_level(priv, level);
+                            return 1;
+                        }
+
+                        switch (*priv->buf) {
+                            case '\n':
+                            case '\t':
+                            case '\r':
+                            case ' ':
+                            case '/':
+                            case '>':
+                                n->len = priv->buf - n->buf;
+                                set_is_in_element_header();
+                                set_previous_element_is_open();
+                                set_level(priv, 0);
+                                return 0;
+                            default: {
+                            }
+                        }
+                        next_char(priv);
+                    }
+                }
+                level++;
+                break;
+            }
+            default: {
+            }
+        }
+        next_char(priv);
+    }
+    set_level(priv, level);
+    return 1;
+}
+
+int tfsxml_attr(tfsxml_string* priv, tfsxml_string* n, tfsxml_string* v) {
+    if (!get_is_in_element_header()) {
+        return -1;
+    }
+
+    v->flags = 0;
+    tfsxml_string priv_bak = *priv;
+    while (priv->len) {
+        switch (*priv->buf) {
+            case '/': {
+                unset_previous_element_is_open();
+                //fall through
+            }
+            case '\n':
+            case '\t':
+            case '\r':
+            case ' ': {
+                break;
+            }
+            case '>': {
+                next_char(priv);
+                unset_is_in_element_header();
+                return -1;
+            }
+            default: {
+                if (!get_previous_element_is_open()) {
+                    break; // Junk after "/", ignoring
+                }
+
+                /* Attribute */
+                n->buf = priv->buf;
+                while (priv->len && *priv->buf != '=') {
+                    next_char(priv);
+                }
+                if (!priv->len) {
+                    *priv = priv_bak;
+                    return 1;
+                }
+                n->len = priv->buf - n->buf;
+                next_char(priv);
+
+                /* Value */
+                const char quote = *priv->buf;
+                if (!priv->len) {
+                    *priv = priv_bak;
+                    return 1;
+                }
+                next_char(priv);
+                v->buf = priv->buf;
+                while (priv->len && *priv->buf != quote) {
+                    if (*priv->buf == '&') {
+                        set_flag(v, 0);
+                    }
+                    next_char(priv);
+                }
+                v->len = priv->buf - v->buf;
+                if (!priv->len) {
+                    *priv = priv_bak;
+                    return 1;
+                }
+                next_char(priv);
+                return 0;
+            }
+        }
+        next_char(priv);
+    }
+    *priv = priv_bak;
+    return 1;
+}
+
+int tfsxml_value(tfsxml_string* priv, tfsxml_string* v) {
+    tfsxml_string priv_bak;
+    unsigned len_sav;
+
+    /* Exiting previous element header analysis if needed */
+    if (get_is_in_element_header()) {
+        int result = tfsxml_leave_element_header(priv);
+        if (result) {
+            return result;
+        }
+
+        /* Previous element must not be finished */
+        if (!get_previous_element_is_open()) {
+            return -1;
+        }
+    }
+
+    priv_bak = *priv;
+    len_sav = priv->len;
+    v->flags = 0;
+    while (priv->len) {
+        switch (*priv->buf) {
+            case '&': {
+                set_must_be_decoded();
+                break;
+            }
+            case '<': {
+                if (priv->len == 1) {
+                    *priv = priv_bak;
+                    return 1;
+                }
+                if (priv->buf[1] == '!') {
+                    if (priv->len <= 8) {
+                        *priv = priv_bak;
+                        return 1;
+                    }
+                    unsigned long long probe = 0;
+                    int i;
+                    for (i = 2; i <= 8; i++) {
+                        probe <<= 8;
+                        probe |= priv->buf[i];
+                    }
+                    if (probe == 0x5B43444154415BULL) { /* "<![CDATA[" */
+                        set_must_be_decoded();
+                        probe = 0;
+                        priv->buf += 9;
+                        priv->len -= 9;
+                        while (priv->len) {
+                            probe &= 0xFFFF;
+                            probe <<= 8;
+                            probe |= *priv->buf;
+                            if (probe == 0x5D5D3EULL) { /* "]]>" */
+                                break;
+                            }
+                            next_char(priv);
+                        }
+                        if (!priv->len) {
+                            *priv = priv_bak;
+                            return 1;
+                        }
+                        break;
+                    }
+                }
+                v->len = len_sav - priv->len;
+                v->buf = priv->buf - v->len;
+                set_previous_element_is_open();
+                set_level(priv, 1);
+                int result = tfsxml_leave(priv);
+                if (result) {
+                    *priv = priv_bak;
+                    return result;
+                }
+                return 0;
+            }
+            default: {
+            }
+        }
+        next_char(priv);
+    }
+    *priv = priv_bak;
+    return 1;
+}
+
+int tfsxml_enter(tfsxml_string* priv) {
+    /* Exiting previous element header if needed */
+    if (get_is_in_element_header()) {
+        int result = tfsxml_leave_element_header(priv);
+        if (result) {
+            return result;
+        }
+    }
+
+    /* Previous element must not be finished */
+    if (!get_previous_element_is_open()) {
+        return -1;
+    }
+
+    unset_previous_element_is_open();
+    return 0;
+}
+
+int tfsxml_leave(tfsxml_string* priv) {
+    tfsxml_string priv_bak;
+    unsigned level;
+
+    get_level(priv, &level);
+
+    /* Exiting previous element header analysis if needed */
+    if (get_is_in_element_header()) {
+        int result = tfsxml_leave_element_header(priv);
+        if (result) {
+            return result;
+        }
+        if (get_previous_element_is_open()) {
+            level++;
+        }
+    }
+
+    set_previous_element_is_open();
+    priv_bak = *priv;
+    while (priv->len) {
+        switch (*priv->buf) {
+            case '<': {
+                priv_bak = *priv;
+                if (priv->len == 1) {
+                    *priv = priv_bak;
+                    set_level(priv, level);
+                    return 1;
+                }
+                if (priv->buf[1] == '/') {
+                    while (priv->len && *priv->buf != '>') {
+                        next_char(priv);
+                    }
+                    if (!priv->len) {
+                        *priv = priv_bak;
+                        set_level(priv, level);
+                        return 1;
+                    }
+                    level--;
+                    if (!level) {
+                        next_char(priv);
+                        unset_previous_element_is_open();
+                        set_level(priv, 0);
+                        return 0;
+                    }
+                    priv_bak = *priv;
+                    break;
+                }
+                if (priv->buf[1] == '?') {
+                    while (priv->len && *priv->buf != '>') {
+                        next_char(priv);
+                    }
+                    if (!priv->len) {
+                        *priv = priv_bak;
+                        set_level(priv, level);
+                        return 1;
+                    }
+                    unset_previous_element_is_open();
+                    break;
+                }
+                if (priv->buf[1] == '!') {
+                    unsigned long long probe = 0;
+                    int i;
+                    if (priv->len <= 8) {
+                        *priv = priv_bak;
+                        set_level(priv, level);
+                        return 1;
+                    }
+                    for (i = 2; i <= 8; i++) {
+                        probe <<= 8;
+                        probe |= priv->buf[i];
+                    }
+                    if (probe == 0x5B43444154415BULL) { /* "<![CDATA[" */
+                        probe = 0;
+                        priv->buf += 9;
+                        priv->len -= 9;
+                        while (priv->len) {
+                            probe &= 0xFFFF;
+                            probe <<= 8;
+                            probe |= *priv->buf;
+                            if (probe == 0x5D5D3EULL) { /* "]]>" */
+                                break;
+                            }
+                            next_char(priv);
+                        }
+                        if (!priv->len) {
+                            *priv = priv_bak;
+                            set_level(priv, level);
+                            return 1;
+                        }
+                        break;
+                    }
+                    if ((probe >> 40) == 0x2D2D) { /* "<!--" */
+                        probe = 0;
+                        priv->buf += 4;
+                        priv->len -= 4;
+                        while (priv->len) {
+                            probe &= 0xFFFF;
+                            probe <<= 8;
+                            probe |= *priv->buf;
+                            if (probe == 0x2D2D3EULL) /* "-->" */
+                                break;
+                            next_char(priv);
+                        }
+                        if (!priv->len) {
+                            *priv = priv_bak;
+                            set_level(priv, level);
+                            return 1;
+                        }
+                        break;
+                    }
+                    while (priv->len && *priv->buf != '>') {
+                        next_char(priv);
+                    }
+                    if (!priv->len) {
+                        *priv = priv_bak;
+                        set_level(priv, level);
+                        return 1;
+                    }
+                    next_char(priv);
+                    break;
+                }
+                for (;;) {
+                    int split;
+
+                    if (!priv->len) {
+                        *priv = priv_bak;
+                        set_level(priv, level);
+                        return 1;
+                    }
+
+                    split = 0;
+                    switch (*priv->buf) {
+                        case '\n':
+                        case '\t':
+                        case '\r':
+                        case ' ':
+                        case '/':
+                        case '>': {
+                            set_is_in_element_header();
+                            set_previous_element_is_open();
+                            split = 1;
+                            break;
+                        }
+                        default: {
+                        }
+                    }
+                    if (split)
+                        break;
+                    next_char(priv);
+                }
+                int result = tfsxml_leave_element_header(priv);
+                if (result) {
+                    set_is_in_element_header();
+                    set_previous_element_is_open();
+                    set_level(priv, level);
+                    return result;
+                }
+                if (get_previous_element_is_open()) {
+                    level++;
+                    set_previous_element_is_open();
+                }
+                continue;
+            }
+            default: {
+            }
+        }
+        next_char(priv);
+    }
+    set_level(priv, level);
+    return 1;
+}
+
+static const char* const tfsxml_decode_markup[2] = {
+    "amp\0apos\0gt\0lt\0quot",
+    "&'><\"",
+};
+
+void tfsxml_decode(void* s, const tfsxml_string* v, void (*func)(void*, const char*, unsigned)) {
+    const char* buf_begin;
+    const char* buf = v->buf;
+    unsigned len = v->len;
+
+    if (!(v->flags & 1)) {
+        func(s, buf, len);
+        return;
+    }
+
+    buf_begin = buf;
+    while (len) {
+        if (*buf == '&') {
+            const char* buf_end = buf;
+            int len_end = len;
+            while (len_end && *buf_end != ';') {
+                buf_end++;
+                len_end--;
+            }
+            if (len_end) {
+                const char* buf_beg = buf + 1;
+                unsigned len_beg = buf_end - buf_beg;
+                if (len_beg && *buf_beg == '#') {
+                    unsigned long value = 0;
+                    buf_beg++;
+                    len_beg--;
+                    if (*buf_beg == 'x' || *buf_beg == 'X') {
+                        buf_beg++;
+                        len_beg--;
+                        while (len_beg) {
+                            char c = *buf_beg++;
+                            len_beg--;
+                            value <<= 4;
+                            if (value >= 0x110000) {
+                                value = -1;
+                                break;
+                            }
+                            if (c >= '0' && c <= '9')
+                                value |= c - '0';
+                            else if (c >= 'A' && c <= 'F')
+                                value |= c - ('A' - 10);
+                            else if (c >= 'a' && c <= 'f')
+                                value |= c - ('a' - 10);
+                            else {
+                                value = -1;
+                                break;
+                            }
+                        }
+                    }
+                    else {
+                        while (len_beg) {
+                            char c = *buf_beg++;
+                            len_beg--;
+                            if (c < '0' || c > '9') {
+                                value = -1;
+                                break;
+                            }
+                            value *= 10;
+                            value += c - '0';
+                            if (value >= 0x110000) {
+                                value = -1;
+                                break;
+                            }
+                        }
+                    }
+
+                    if (value != (unsigned long)-1) {
+                        char utf8[4];
+                        func(s, buf_begin, buf - buf_begin);
+                        if (value < 0x0080) {
+                            utf8[0] = (char)value;
+                            func(s, utf8, 1);
+                        }
+                        else if (value < 0x0800) {
+                            utf8[0] = 0xC0 | (char)(value >> 6);
+                            utf8[1] = 0x80 | (char)(value & 0x3F);
+                            func(s, utf8, 2);
+                        }
+                        else if (value < 0x10000) {
+                            utf8[0] = 0xE0 | (char)((value >> 12));
+                            utf8[1] = 0x80 | (char)((value >> 6) & 0x3F);
+                            utf8[2] = 0x80 | (char)((value & 0x3F));
+                            func(s, utf8, 3);
+                        }
+                        else if (value < 0x110000) {
+                            utf8[0] = 0xF0 | (char)((value >> 18));
+                            utf8[1] = 0x80 | (char)((value >> 12) & 0x3F);
+                            utf8[2] = 0x80 | (char)((value >> 6) & 0x3F);
+                            utf8[3] = 0x80 | (char)((value & 0x3F));
+                            func(s, utf8, 4);
+                        }
+
+                        len -= buf_end - buf;
+                        buf = buf_end;
+                        buf_begin = buf_end + 1;
+                    }
+                }
+                else {
+                    const char* const buf_beg_sav = buf_beg;
+                    const char* replaced = tfsxml_decode_markup[0];
+                    const char* replace_bys = tfsxml_decode_markup[1];
+                    for (;;) {
+                        char replace_by = *replace_bys++;
+                        if (!replace_by) {
+                            break;
+                        }
+
+                        while (*replaced) {
+                            if (buf_beg == buf_end || !*replaced || *replaced != *buf_beg)
+                                break;
+                            replaced++;
+                            buf_beg++;
+                        }
+                        if (buf_beg == buf_end && !*replaced) {
+                            func(s, buf_begin, buf - buf_begin);
+                            func(s, &replace_by, 1);
+                            len -= buf_end - buf;
+                            buf = buf_end;
+                            buf_begin = buf_end + 1;
+                            break;
+                        }
+                        buf_beg = buf_beg_sav;
+                        while (*replaced) {
+                            replaced++;
+                        }
+                        replaced++;
+                    }
+                }
+            }
+        }
+        if (*buf == '<' && len > 8) {
+            unsigned long long probe = 0;
+            int i;
+            for (i = 1; i <= 8; i++) {
+                probe <<= 8;
+                probe |= buf[i];
+            }
+            if (probe == 0x215B43444154415BULL) { /* "<![CDATA[" */
+                func(s, buf_begin, buf - buf_begin);
+                probe = 0;
+                buf += 9;
+                len -= 9;
+                buf_begin = buf;
+                while (len) {
+                    probe &= 0xFFFF;
+                    probe <<= 8;
+                    probe |= *buf;
+                    if (probe == 0x5D5D3EULL) { /* "]]>" */
+                        break;
+                    }
+                    buf++;
+                    len--;
+                }
+                func(s, buf_begin, buf - 2 - buf_begin);
+                buf_begin = buf + 1;
+            }
+        }
+        buf++;
+        len--;
+    }
+    func(s, buf_begin, buf - buf_begin);
+}
+
+
+
 static void mkv_write_blockadditionmapping(AVFormatContext *s, const MatroskaMuxContext *mkv,
                                            const AVCodecParameters *par, AVIOContext *pb,
                                            mkv_track *track, const AVStream *st)
@@ -1717,6 +2752,142 @@ static void mkv_write_blockadditionmapping(AVFormatContext *s, const MatroskaMux
     const AVDOVIDecoderConfigurationRecord *dovi;
     const AVPacketSideData *sd;
 
+    size_t timecodes_pos = 0;
+    if (mkv->mediatimecode && par->codec_type == AVMEDIA_TYPE_VIDEO) {
+        if (s->strict_std_compliance > FF_COMPLIANCE_EXPERIMENTAL) {
+            av_log(s, AV_LOG_ERROR, "mediatimecode not enabled, -strict experimental needed for this experimental feature.\n");
+        } else {
+            FILE* f;
+            f = fopen (mkv->mediatimecode, "rb");
+            if (f == NULL) {
+                av_log(s, AV_LOG_ERROR, "mediatimecode not enabled, can not open %s.\n", mkv->mediatimecode);
+            } else {
+                int size, size_read;
+                char* buffer;
+                tfsxml_string p, v, a;
+                fseek(f, 0L, SEEK_END);
+                size=ftell(f);
+                fseek(f, 0, SEEK_SET);
+                buffer = (char*) malloc(size);
+                size_read = fread((void*)buffer, 1, size, f);
+                if (size_read != size) {
+                    av_log(s, AV_LOG_ERROR, "mediatimecode not enabled, can not read %s, %d bytes read.\n", mkv->mediatimecode, size_read);
+                }
+                if (!tfsxml_init(&p, buffer, size, 0)) {
+                    for (;;) {
+                        if (tfsxml_next(&p, &v)) 
+                            break;
+                        if (!tfsxml_strcmp_charp(v, "MediaTimecode")) {
+                            if (tfsxml_enter(&p))
+                                continue;
+                            for (;;) {
+                                if (tfsxml_next(&p, &v)) 
+                                    break;
+                                if (!tfsxml_strcmp_charp(v, "media")) {
+                                    if (tfsxml_enter(&p)) {
+                                        continue;
+                                    }
+                                    for (;;) {
+                                        if (timecodes_pos >= 100 || tfsxml_next(&p, &v)) 
+                                            break;
+                                        if (!tfsxml_strcmp_charp(v, "timecode_stream")) {
+                                            uint64_t* values;
+                                            values = (uint64_t*) malloc(sizeof(uint64_t) * (2 + size));
+                                            values[0] = 2;
+                                            values[1] = 2;
+                                            for (;;) {
+                                                if (tfsxml_attr(&p, &a, &v)) 
+                                                    break;
+                                                if (!tfsxml_strcmp_charp(a, "start_tc")) {
+                                                    if (v.len == 11) {
+                                                        values[values[0]]=
+                                                          ((uint64_t)v.buf[0] - '0') << 56
+                                                        | ((uint64_t)v.buf[1] - '0') << 48
+                                                        | ((uint64_t)v.buf[3] - '0') << 40
+                                                        | ((uint64_t)v.buf[4] - '0') << 32
+                                                        | ((uint64_t)v.buf[6] - '0') << 24
+                                                        | ((uint64_t)v.buf[7] - '0') << 16
+                                                        | ((uint64_t)v.buf[8] == '?' ? 1 : 0) << 10
+                                                        | ((uint64_t)v.buf[9] - '0') <<  8
+                                                        | ((uint64_t)v.buf[10] - '0')     ;
+                                                        values[0]++;
+                                                    }
+                                                }
+                                            }
+                                            if (!tfsxml_enter(&p)) {
+                                                for (;;) {
+                                                    if (tfsxml_next(&p, &v)) 
+                                                        break;
+                                                    if (!tfsxml_strcmp_charp(v, "tc")) {
+                                                        for (;;) {
+                                                            if (tfsxml_attr(&p, &a, &v)) 
+                                                                break;
+                                                            if (!tfsxml_strcmp_charp(a, "v")) {
+                                                                if (v.len == 11) {
+                                                                    values[values[0]]=
+                                                                      ((uint64_t)v.buf[0] - '0') << 56
+                                                                    | ((uint64_t)v.buf[1] - '0') << 48
+                                                                    | ((uint64_t)v.buf[3] - '0') << 40
+                                                                    | ((uint64_t)v.buf[4] - '0') << 32
+                                                                    | ((uint64_t)v.buf[6] - '0') << 24
+                                                                    | ((uint64_t)v.buf[7] - '0') << 16
+                                                                    | ((uint64_t)v.buf[8] == '?' ? 1 : 0) << 10
+                                                                    | ((uint64_t)v.buf[9] - '0') <<  8
+                                                                    | ((uint64_t)v.buf[10] - '0')     ;
+                                                                    values[0]++;
+                                                                }
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                            track->timecodes[timecodes_pos++] = values;
+                                            static const char* tc_string_template = "00:00:00:00";
+                                            if (values[0] > 2) {
+                                                char tc_string[12];
+                                                char tc_string2[12];
+                                                uint64_t value2 = values[values[0] - 1];
+                                                memcpy (tc_string, tc_string_template, 12);
+                                                memcpy (tc_string2, tc_string_template, 12);
+                                                tc_string[ 0] += (values[2] >> 56) & 0xFF;
+                                                tc_string[ 1] += (values[2] >> 48) & 0xFF;
+                                                tc_string[ 3] += (values[2] >> 40) & 0xFF;
+                                                tc_string[ 4] += (values[2] >> 32) & 0xFF;
+                                                tc_string[ 6] += (values[2] >> 24) & 0xFF;
+                                                tc_string[ 7] += (values[2] >> 16) & 0xFF;
+                                                if ((values[2] >> 10) & 1)
+                                                    tc_string[ 8] = ';';
+                                                tc_string[ 9] += (values[2] >>  8) & 0x3F;
+                                                tc_string[10] += (values[2]      ) & 0xFF;
+                                                tc_string2[ 0] += (value2 >> 56) & 0xFF;
+                                                tc_string2[ 1] += (value2 >> 48) & 0xFF;
+                                                tc_string2[ 3] += (value2 >> 40) & 0xFF;
+                                                tc_string2[ 4] += (value2 >> 32) & 0xFF;
+                                                tc_string2[ 6] += (value2 >> 24) & 0xFF;
+                                                tc_string2[ 7] += (value2 >> 16) & 0xFF;
+                                                if ((value2 >> 10) & 1)
+                                                    tc_string2[ 8] = ';';
+                                                tc_string2[ 9] += (value2 >>  8) & 0x3F;
+                                                tc_string2[10] += (value2      ) & 0xFF;
+                                                av_log(s, AV_LOG_INFO, "Media time code %i: %s%s%s\n", (int)timecodes_pos, tc_string, values[0] == 3 ? " (stripped)" : " - ", values[0] == 3 ? "" : tc_string2);
+                                            } else {
+                                                av_log(s, AV_LOG_WARNING, "Media time code %i: stream detected but no time code detected.\n", (int)timecodes_pos);
+                                            }
+                                        }
+                                    }
+                                    tfsxml_leave(&p);
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                }
+                track->timecodes[timecodes_pos] = NULL;
+                free(buffer);
+                fclose (f);
+            }
+        }
+    }
     if (IS_SEEKABLE(s->pb, mkv) && par->codec_type == AVMEDIA_TYPE_VIDEO && mkv->reserve_video_track_space > 1) {
         track->blockadditionmapping_offset = avio_tell(pb);
         // We can't know at this point if there will be a block with BlockAdditions, so
@@ -2917,11 +4088,12 @@ static int mkv_write_block(void *logctx, MatroskaMuxContext *mkv,
     }
 
     // Extract timecode from side data and write as BlockAdditional
+    uint64_t count = 0;
     if (par->codec_type == AVMEDIA_TYPE_VIDEO) {
         side_data = av_packet_get_side_data(pkt, AV_PKT_DATA_S12M_TIMECODE, &side_data_size);
         if (side_data && side_data_size >= sizeof(uint64_t)) {
             uint64_t *side_data_64 = (uint64_t*)side_data;
-            uint64_t count = side_data_64[0];
+            count = side_data_64[0];
             if (side_data_size / sizeof(uint64_t) - 1 >= count ) {
                 uint64_t written_count = count;
                 side_data_64++;
@@ -2943,6 +4115,26 @@ static int mkv_write_block(void *logctx, MatroskaMuxContext *mkv,
                 }
                 track->timecode_count = FFMAX(track->timecode_count, count);
             }
+        }
+    }
+
+    // Extract timecode from external file and write as BlockAdditional
+    size_t timecode_buf_pos = 0;
+    if (track->timecodes) {
+        for (uint64_t i = 0; i < 100; i++) {
+            if (!track->timecodes[i])
+                continue;
+            if (track->timecodes[i][1]<track->timecodes[i][0]) {
+                uint8_t *payload = timecode_buf[i];
+                uint64_t tc = track->timecodes[i][track->timecodes[i][1]++];
+                AV_WB64(payload, tc);
+                av_log(logctx, AV_LOG_DEBUG, "Writing SMPTE timecode from external file, pos %li, to BlockAdditional: 0x%016lX\n", i + 1, tc);
+
+                int blockaddid = MATROSKA_BLOCK_ADD_ID_SMPTE_12M + count + timecode_buf_pos++;
+                mkv_write_blockadditional(&writer, payload, 8, blockaddid);
+                track->max_blockaddid = FFMAX(track->max_blockaddid, blockaddid);
+            }
+            track->timecode_count = FFMAX(track->timecode_count, count + i + 1);
         }
     }
 
@@ -3639,6 +4831,7 @@ static const AVOption options[] = {
     { "infer", "for each track type, mark each track of disposition default as default; if none exists, mark the first track as default", 0, AV_OPT_TYPE_CONST, { .i64 = DEFAULT_MODE_INFER }, 0, 0, FLAGS, .unit = "default_mode" },
     { "infer_no_subs", "for each track type, mark each track of disposition default as default; for audio and video: if none exists, mark the first track as default", 0, AV_OPT_TYPE_CONST, { .i64 = DEFAULT_MODE_INFER_NO_SUBS }, 0, 0, FLAGS, .unit = "default_mode" },
     { "passthrough", "use the disposition flag as-is", 0, AV_OPT_TYPE_CONST, { .i64 = DEFAULT_MODE_PASSTHROUGH }, 0, 0, FLAGS, .unit = "default_mode" },
+    { "mediatimecode", "MediaTimecode XML file name", OFFSET(mediatimecode), AV_OPT_TYPE_STRING, { .str = NULL },  0, 0, FLAGS },
     { NULL },
 };
 
