@@ -1318,8 +1318,8 @@ static void print_frame_side_data(AVTextFormatContext *tfc,
             char tcbuf[AV_TIMECODE_STR_SIZE];
             av_timecode_make_mpeg_tc_string(tcbuf, *(int64_t *)(sd->data));
             print_str("timecode", tcbuf);
-        } else if (sd->type == AV_FRAME_DATA_S12M_TIMECODE && sd->size == 16) {
-            uint32_t *tc = (uint32_t*)sd->data;
+        } else if (sd->type == AV_FRAME_DATA_S12M_TIMECODE && sd->size >= 8) {
+            uint64_t *tc = (uint64_t*)sd->data;
             int m = FFMIN(tc[0],3);
             avtext_print_section_header(tfc, NULL, SECTION_ID_FRAME_SIDE_DATA_TIMECODE_LIST);
             for (int j = 1; j <= m ; j++) {
