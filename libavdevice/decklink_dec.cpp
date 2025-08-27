@@ -826,9 +826,9 @@ HRESULT decklink_input_callback::VideoInputFrameArrived(
                         uint8_t* packed_metadata;
 
                         if (av_cmp_q(ctx->video_st->r_frame_rate, av_make_q(60, 1)) < 1) {
-                            uint32_t tc_data = av_timecode_get_smpte_from_framenum(&tcr, 0);
-                            int size = sizeof(uint32_t) * 4;
-                            uint32_t *sd = (uint32_t *)av_packet_new_side_data(&pkt, AV_PKT_DATA_S12M_TIMECODE, size);
+                            uint64_t tc_data = av_timecode_expand_to_64bit(av_timecode_get_smpte_from_framenum(&tcr, 0));
+                            int size = sizeof(uint64_t) * 4;
+                            uint64_t *sd = (uint64_t *)av_packet_new_side_data(&pkt, AV_PKT_DATA_S12M_TIMECODE, size);
 
                             if (sd) {
                                 *sd       = 1;       // one TC
