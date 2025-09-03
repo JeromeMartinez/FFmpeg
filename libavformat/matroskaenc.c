@@ -1706,16 +1706,16 @@ static void mkv_write_blockadditionmapping(AVFormatContext *s, const MatroskaMux
     const AVDOVIDecoderConfigurationRecord *dovi;
     const AVPacketSideData *sd;
 
-    if (IS_SEEKABLE(s->pb, mkv)) {
+    if (IS_SEEKABLE(s->pb, mkv) && par->codec_type == AVMEDIA_TYPE_VIDEO) {
         track->blockadditionmapping_offset = avio_tell(pb);
         // We can't know at this point if there will be a block with BlockAdditions, so
         // we either write the default value here, or a void element. Either of them will
         // be overwritten when finishing the track.
-        put_ebml_uint(pb, MATROSKA_ID_TRACKMAXBLKADDID, 0);
         if (par->codec_type == AVMEDIA_TYPE_VIDEO) {
             // Similarly, reserve space for an eventual
             // HDR10+ ITU T.35 metadata BlockAdditionMapping.
-            put_ebml_void(pb, 3 /* BlockAdditionMapping */
+            put_ebml_void(pb, 4 /* MaxBlockAdditionID */
+                            + 3 /* BlockAdditionMapping */
                             + 4 /* BlockAddIDValue */
                             + 4 /* BlockAddIDType */);
         }
@@ -3294,7 +3294,7 @@ after_cues:
             for (unsigned i = 0; i < s->nb_streams; i++) {
                 const mkv_track *track = &mkv->tracks[i];
 
-                if (!track->max_blockaddid)
+                if (!track->max_blockaddid || !track->blockadditionmapping_offset)
                     continue;
 
                 // We reserved a single byte to write this value.
