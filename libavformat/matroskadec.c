@@ -295,6 +295,7 @@ typedef struct MatroskaTrack {
 
     uint32_t palette[AVPALETTE_COUNT];
     int has_palette;
+    int add_block_timecode_count;
 } MatroskaTrack;
 
 typedef struct MatroskaAttachment {
@@ -2530,6 +2531,9 @@ static int mkv_parse_block_addition_mappings(AVFormatContext *s, AVStream *st, M
                     return AVERROR_INVALIDDATA;
             }
             break;
+        case MATROSKA_BLOCK_ADD_ID_TYPE_SMPTE_12M:
+                track->add_block_timecode_count++;
+                break;
         case MATROSKA_BLOCK_ADD_ID_TYPE_DVCC:
         case MATROSKA_BLOCK_ADD_ID_TYPE_DVVC:
             if ((ret = mkv_parse_dvcc_dvvc(s, st, track, &mapping->extradata)) < 0)
@@ -3961,6 +3965,36 @@ static int matroska_parse_block_additional(MatroskaDemuxContext *matroska,
             return res;
         }
 
+        return 0;
+    }
+    case MATROSKA_BLOCK_ADD_ID_TYPE_SMPTE_12M: {
+        if (size < 8) {
+            av_log(matroska->ctx, AV_LOG_WARNING, "SMPTE timecode from BlockAdditional is malformed.\n");
+            break;
+        }
+
+        size_t sd_size = 0;
+        uint8_t *sd = av_packet_get_side_data(pkt, AV_PKT_DATA_S12M_TIMECODE, &sd_size);
+        uint64_t count = sd ? *((uint64_t*)sd) : 0;
+        if (!count) {
+            sd_size = sizeof(uint64_t) * (1 + track->add_block_timecode_count);
+            sd = av_packet_new_side_data(pkt, AV_PKT_DATA_S12M_TIMECODE, sd_size);
+            count = 0;
+        }
+
+        if (count >= track->add_block_timecode_count) {
+            av_log(matroska->ctx, AV_LOG_DEBUG, "There are more timecodes in the block than the count indicated in the track header, extra timecodes are ignored.\n");
+        }
+        else if (sd) {
+            uint64_t tc = *((uint64_t*)data);
+            av_log(matroska->ctx, AV_LOG_DEBUG, "Reading SMPTE timecode from BlockAdditional: 0x%016lX (RFC 5484)\n", tc);
+
+            uint64_t *sd_64 = (uint64_t*)sd;
+            count++;
+            *sd_64 = count;
+            AV_WB64(sd_64 + count, tc);
+        }
+        
         return 0;
     }
     default:
