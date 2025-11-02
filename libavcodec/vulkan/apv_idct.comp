@@ -1,0 +1,96 @@
+/*
+ * Copyright (c) 2025 Lynne <dev@lynne.ee>
+ *
+ * This file is part of FFmpeg.
+ *
+ * FFmpeg is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU Lesser General Public
+ * License as published by the Free Software Foundation; either
+ * version 2.1 of the License, or (at your option) any later version.
+ *
+ * FFmpeg is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * Lesser General Public License for more details.
+ *
+ * You should have received a copy of the GNU Lesser General Public
+ * License along with FFmpeg; if not, write to the Free Software
+ * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
+ */
+
+const float apv_level_scale[6] = { 40.0f, 45.0f, 51.0f, 57.0f, 64.0f, 71.0f };
+
+shared float qmatrix_scaled[8][8];
+
+shared float btemp[8][8];
+shared float block[8][8];
+
+void idct_block(ivec2 pos, uint comp, float shift, float off)
+{
+    for (int i = 0; i < 8; i++) {
+        for (int j = 0; j < 8; j++) {
+            float v = imageLoad(dst[comp], pos + ivec2(j, i))[0];
+            v *= qmatrix_scaled[i][j] * shift;
+            v += off;
+            block[i][j] = v;
+        }
+    }
+
+
+
+    for (int i = 0; i < 8; i++)
+        for (int j = 0; j < 8; j++)
+            imageStore(dst[comp], pos + ivec2(j, i), ivec4(block[i][j]));
+}
+
+
+void main(void)
+{
+    const ivec2 tile_pos = ivec2(gl_WorkGroupID.xy);
+    const uint comp_idx = uint(gl_WorkGroupID.z);
+
+    ivec2 sub_shift = comp_idx == 0 ? ivec2(0) : log2_chroma_sub;
+    ivec2 tile_start = ivec2(tile_col[tile_pos.x], tile_row[tile_pos.y]);
+    ivec2 tile_dim = ivec2(tile_col[tile_pos.x + 1],
+                           tile_row[tile_pos.y + 1]) - tile_start;
+    ivec2 tile_mb_dim = tile_dim / APV_MB_SIZE;
+    ivec2 blk_mb_dim = ivec2(2, 2) >> sub_shift;
+
+    const int qp = tile_qp[comp_idx][tile_pos.y][tile_pos.x];
+    const float level_scale = apv_level_scale[qp % 6];
+    const int qp_shift = qp / 6;
+    const int shift = 1 << qp_shift;
+    const float off = (1 << (bd_shift - 1)) >> bd_shift;
+
+    for (int i = 0; i < 8; i++)
+        for (int j = 0; j < 8; j++)
+            qmatrix_scaled[i][j] = q_matrix[comp_idx][i][j] * level_scale;
+
+
+
+    ivec2 mb, blk;
+    for (mb.y = 0; mb.y < tile_mb_dim.y; mb.y++) {
+        for (mb.x = 0; mb.x < tile_mb_dim.x; mb.x++) {
+            for (blk.y = 0; blk.y < blk_mb_dim.y; blk.y++) {
+                for (blk.x = 0; blk.x < blk_mb_dim.x; blk.x++) {
+                    ivec2 pos = (APV_MB_SIZE*mb +
+                                 APV_TR_SIZE*blk + tile_start) >> sub_shift;
+
+
+                }
+            }
+        }
+    }
+
+
+
+
+#if 0
+    ivec3 block = ivec3(gl_WorkGroupInvocationID.xyz);
+
+    int qp = tile_qp[pos.z][];
+    float level_scale = apv_level_scale[qp % 6];
+
+    qmatrix_scaled[pos.y][pos.x] = level_scale*q_matrix[pos.z][pos.y][pos.x];
+    #endif
+}
