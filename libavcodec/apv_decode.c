@@ -80,7 +80,7 @@ static int apv_decode_check_format(AVCodecContext *avctx,
     }
 
     if (avctx->width != header->frame_info.frame_width ||
-        avctx->width != header->frame_info.frame_height) {
+        avctx->height != header->frame_info.frame_height) {
         err = ff_set_dimensions(avctx,
                                 FFALIGN(header->frame_info.frame_width,  16),
                                 FFALIGN(header->frame_info.frame_height, 16));
@@ -373,6 +373,7 @@ static int apv_decode(AVCodecContext *avctx, AVFrame *output,
     if (err < 0)
         return err;
 
+    apv->cur_raw_frame = input;
     apv->output_frame = output;
     atomic_store_explicit(&apv->tile_errors, 0, memory_order_relaxed);
 
