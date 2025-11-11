@@ -46,6 +46,10 @@
 #include "jpeg2000dec.h"
 #include "jpeg2000htdec.h"
 
+#include "hwconfig.h"
+#include "hwaccel_internal.h"
+#include "config_components.h"
+
 #define JP2_SIG_TYPE    0x6A502020
 #define JP2_SIG_VALUE   0x0D0A870A
 #define JP2_CODESTREAM  0x6A703263
@@ -192,6 +196,17 @@ static const enum AVPixelFormat all_pix_fmts[]  = {RGB_PIXEL_FORMATS,
                                                    YUV_PIXEL_FORMATS,
                                                    XYZ_PIXEL_FORMATS};
 
+static enum AVPixelFormat get_pixel_format(AVCodecContext *avctx,
+                                           enum AVPixelFormat pix_fmt)
+{
+    enum AVPixelFormat pix_fmts[] = {
+        pix_fmt,
+        AV_PIX_FMT_NONE,
+    };
+
+    return ff_get_format(avctx, pix_fmts);
+}
+
 /* marker segments */
 /* get sizes and offsets of image, tiles; number of components */
 static int get_siz(Jpeg2000DecoderContext *s)
@@ -199,6 +214,7 @@ static int get_siz(Jpeg2000DecoderContext *s)
     int i;
     int ncomponents;
     uint32_t log2_chroma_wh = 0;
+    enum AVPixelFormat pix_fmt = s->pix_fmt;
     const enum AVPixelFormat *possible_fmts = NULL;
     int possible_fmts_nb = 0;
     int ret;
@@ -209,6 +225,9 @@ static int get_siz(Jpeg2000DecoderContext *s)
         av_log(s->avctx, AV_LOG_ERROR, "Insufficient space for SIZ\n");
         return AVERROR_INVALIDDATA;
     }
+
+    int prev_width    = s->width;
+    int prev_height   = s->height;
 
     s->avctx->profile = bytestream2_get_be16u(&s->g); // Rsiz
     s->width          = bytestream2_get_be32u(&s->g); // Width
@@ -372,24 +391,30 @@ static int get_siz(Jpeg2000DecoderContext *s)
             break;
         }
     }
-    if (   s->avctx->pix_fmt != AV_PIX_FMT_NONE
-        && !pix_fmt_match(s->avctx->pix_fmt, ncomponents, s->precision, log2_chroma_wh, s->pal8))
-            s->avctx->pix_fmt = AV_PIX_FMT_NONE;
-    if (s->avctx->pix_fmt == AV_PIX_FMT_NONE)
+
+    /* If current pixel format doesn't match current configuration, reset it */
+    if (pix_fmt != AV_PIX_FMT_NONE &&
+        !pix_fmt_match(pix_fmt, ncomponents, s->precision, log2_chroma_wh, s->pal8))
+        pix_fmt = AV_PIX_FMT_NONE;
+
+    /* Check for ordinary matches */
+    if (pix_fmt == AV_PIX_FMT_NONE) {
         for (i = 0; i < possible_fmts_nb; ++i) {
             if (pix_fmt_match(possible_fmts[i], ncomponents, s->precision, log2_chroma_wh, s->pal8)) {
-                s->avctx->pix_fmt = possible_fmts[i];
+                pix_fmt = possible_fmts[i];
                 break;
             }
         }
+    }
 
+    /* Check for special cases */
     if (i == possible_fmts_nb) {
         if (ncomponents == 4 &&
             s->cdy[0] == 1 && s->cdx[0] == 1 &&
             s->cdy[1] == 1 && s->cdx[1] == 1 &&
             s->cdy[2] == s->cdy[3] && s->cdx[2] == s->cdx[3]) {
             if (s->precision == 8 && s->cdy[2] == 2 && s->cdx[2] == 2 && !s->pal8) {
-                s->avctx->pix_fmt = AV_PIX_FMT_YUVA420P;
+                pix_fmt = AV_PIX_FMT_YUVA420P;
                 s->cdef[0] = 0;
                 s->cdef[1] = 1;
                 s->cdef[2] = 2;
@@ -399,21 +424,21 @@ static int get_siz(Jpeg2000DecoderContext *s)
         } else if (ncomponents == 3 && s->precision == 8 &&
                    s->cdx[0] == s->cdx[1] && s->cdx[0] == s->cdx[2] &&
                    s->cdy[0] == s->cdy[1] && s->cdy[0] == s->cdy[2]) {
-            s->avctx->pix_fmt = AV_PIX_FMT_RGB24;
+            pix_fmt = AV_PIX_FMT_RGB24;
             i = 0;
         } else if (ncomponents == 2 && s->precision == 8 &&
                    s->cdx[0] == s->cdx[1] && s->cdy[0] == s->cdy[1]) {
-            s->avctx->pix_fmt = AV_PIX_FMT_YA8;
+            pix_fmt = AV_PIX_FMT_YA8;
             i = 0;
         } else if (ncomponents == 2 && s->precision == 16 &&
                    s->cdx[0] == s->cdx[1] && s->cdy[0] == s->cdy[1]) {
-            s->avctx->pix_fmt = AV_PIX_FMT_YA16;
+            pix_fmt = AV_PIX_FMT_YA16;
             i = 0;
         } else if (ncomponents == 1 && s->precision == 8) {
-            s->avctx->pix_fmt = AV_PIX_FMT_GRAY8;
+            pix_fmt = AV_PIX_FMT_GRAY8;
             i = 0;
         } else if (ncomponents == 1 && s->precision == 12) {
-            s->avctx->pix_fmt = AV_PIX_FMT_GRAY16LE;
+            pix_fmt = AV_PIX_FMT_GRAY16LE;
             i = 0;
         }
     }
@@ -438,6 +463,18 @@ static int get_siz(Jpeg2000DecoderContext *s)
                ncomponents > 3 ? s->cdy[3] : 0);
         return AVERROR_PATCHWELCOME;
     }
+
+    if (pix_fmt != s->pix_fmt ||
+        prev_width != s->width || prev_height != s->height) {
+        s->pix_fmt = pix_fmt;
+
+        int err = get_pixel_format(s->avctx, pix_fmt);
+        if (err < 0)
+            return err;
+
+        s->avctx->pix_fmt = err;
+    }
+
     s->avctx->bits_per_raw_sample = s->precision;
     return 0;
 }
@@ -2438,6 +2475,7 @@ static void jpeg2000_dec_cleanup(Jpeg2000DecoderContext *s)
         }
     }
     av_freep(&s->packed_headers);
+    av_refstruct_unref(&s->hwaccel_picture_private);
     s->packed_headers_size = 0;
     memset(&s->packed_headers_stream, 0, sizeof(s->packed_headers_stream));
     av_freep(&s->tile);
@@ -2911,16 +2949,42 @@ static int jpeg2000_decode_frame(AVCodecContext *avctx, AVFrame *picture,
         if (++x == s->ncomponents)
             picture->flags |= AV_FRAME_FLAG_LOSSLESS;
 
-    avctx->execute2(avctx, jpeg2000_decode_tile, picture, NULL, s->numXtiles * s->numYtiles);
+    if (avctx->hwaccel) {
+        const FFHWAccel *hwaccel = ffhwaccel(avctx->hwaccel);
 
-    jpeg2000_dec_cleanup(s);
+        ret = ff_hwaccel_frame_priv_alloc(avctx, &s->hwaccel_picture_private);
+        if (ret < 0)
+            goto end;
 
-    *got_frame = 1;
+        ret = hwaccel->start_frame(avctx, avpkt->buf,
+                                   avpkt->data, avpkt->size);
+        if (ret < 0)
+            goto end;
 
-    if (s->avctx->pix_fmt == AV_PIX_FMT_PAL8)
-        memcpy(picture->data[1], s->palette, 256 * sizeof(uint32_t));
+        for (int i = 0; i < s->numXtiles * s->numYtiles; i++) {
+            ret = hwaccel->decode_slice(avctx, s->tile[i].packed_headers,
+                                        s->tile[i].packed_headers_size);
+            if (ret < 0)
+                goto end;
+        }
 
-    return bytestream2_tell(&s->g);
+        ret = hwaccel->end_frame(avctx);
+        if (ret < 0)
+            goto end;
+
+        *got_frame = 1;
+
+        ret = avpkt->size;
+    } else {
+        avctx->execute2(avctx, jpeg2000_decode_tile, picture, NULL, s->numXtiles * s->numYtiles);
+
+        *got_frame = 1;
+
+        if (s->avctx->pix_fmt == AV_PIX_FMT_PAL8)
+            memcpy(picture->data[1], s->palette, 256 * sizeof(uint32_t));
+
+        ret = bytestream2_tell(&s->g);
+    }
 
 end:
     jpeg2000_dec_cleanup(s);
@@ -2956,4 +3020,7 @@ const FFCodec ff_jpeg2000_decoder = {
     .p.max_lowres     = 5,
     .p.profiles       = NULL_IF_CONFIG_SMALL(ff_jpeg2000_profiles),
     .caps_internal    = FF_CODEC_CAP_SKIP_FRAME_FILL_PARAM,
+    .hw_configs       = (const AVCodecHWConfigInternal *const []) {
+        NULL
+    },
 };

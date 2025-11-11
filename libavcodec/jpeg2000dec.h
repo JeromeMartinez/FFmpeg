@@ -75,6 +75,10 @@ typedef struct Jpeg2000DecoderContext {
     AVCodecContext  *avctx;
     GetByteContext  g;
 
+    AVFrame        *f;
+    void           *hwaccel_picture_private;
+    enum AVPixelFormat pix_fmt;
+
     int             width, height;
     int             image_offset_x, image_offset_y;
     int             tile_offset_x, tile_offset_y;
