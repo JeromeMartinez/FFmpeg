@@ -51,6 +51,7 @@ extern const struct FFHWAccel ff_hevc_vaapi_hwaccel;
 extern const struct FFHWAccel ff_hevc_vdpau_hwaccel;
 extern const struct FFHWAccel ff_hevc_videotoolbox_hwaccel;
 extern const struct FFHWAccel ff_hevc_vulkan_hwaccel;
+extern const struct FFHWAccel ff_jpeg2000_vulkan_hwaccel;
 extern const struct FFHWAccel ff_mjpeg_nvdec_hwaccel;
 extern const struct FFHWAccel ff_mjpeg_vaapi_hwaccel;
 extern const struct FFHWAccel ff_mpeg1_nvdec_hwaccel;

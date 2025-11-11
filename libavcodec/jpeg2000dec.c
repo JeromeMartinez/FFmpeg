@@ -200,6 +200,9 @@ static enum AVPixelFormat get_pixel_format(AVCodecContext *avctx,
                                            enum AVPixelFormat pix_fmt)
 {
     enum AVPixelFormat pix_fmts[] = {
+#if CONFIG_JPEG2000_VULKAN_HWACCEL
+        AV_PIX_FMT_VULKAN,
+#endif
         pix_fmt,
         AV_PIX_FMT_NONE,
     };
@@ -3021,6 +3024,9 @@ const FFCodec ff_jpeg2000_decoder = {
     .p.profiles       = NULL_IF_CONFIG_SMALL(ff_jpeg2000_profiles),
     .caps_internal    = FF_CODEC_CAP_SKIP_FRAME_FILL_PARAM,
     .hw_configs       = (const AVCodecHWConfigInternal *const []) {
+#if CONFIG_JPEG2000_VULKAN_HWACCEL
+        HWACCEL_VULKAN(jpeg2000),
+#endif
         NULL
     },
 };

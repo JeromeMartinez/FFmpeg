@@ -30,6 +30,8 @@ OBJS-$(CONFIG_APV_VULKAN_HWACCEL) += vulkan/common.o \
                                      vulkan/apv_decode.o \
                                      vulkan/apv_idct.o
 
+OBJS-$(CONFIG_JPEG2000_VULKAN_HWACCEL) += vulkan/common.o
+
 VULKAN = $(subst $(SRC_PATH)/,,$(wildcard $(SRC_PATH)/libavcodec/vulkan/*.comp))
 .SECONDARY: $(VULKAN:.comp=.c)
 libavcodec/vulkan/%.c: TAG = VULKAN
