@@ -88,11 +88,14 @@ static int vk_prores_raw_start_frame(AVCodecContext          *avctx,
                                   &pp->frame_data_buf,
                                   VK_BUFFER_USAGE_STORAGE_BUFFER_BIT |
                                   VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
-                                  NULL, prr->nb_tiles*sizeof(TileData),
+                                  NULL, 64 + prr->nb_tiles*sizeof(TileData),
                                   VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT |
                                   VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT);
     if (err < 0)
         return err;
+
+    FFVkBuffer *frame_data_buf = (FFVkBuffer *)pp->frame_data_buf->data;
+    memcpy(frame_data_buf->mapped_mem, prr->qmat, 64);
 
     /* Prepare frame to be used */
     err = ff_vk_decode_prepare_frame_sdr(dec, prr->frame, vp, 1,
@@ -113,7 +116,7 @@ static int vk_prores_raw_decode_slice(AVCodecContext *avctx,
     FFVulkanDecodePicture *vp = &pp->vp;
 
     FFVkBuffer *frame_data_buf = (FFVkBuffer *)pp->frame_data_buf->data;
-    TileData *td = (TileData *)frame_data_buf->mapped_mem;
+    TileData *td = (TileData *)(frame_data_buf->mapped_mem + 64);
     FFVkBuffer *slices_buf = vp->slices_buf ? (FFVkBuffer *)vp->slices_buf->data : NULL;
 
     td[pp->nb_tiles].pos[0] = prr->tiles[pp->nb_tiles].x;
@@ -195,7 +198,7 @@ static int vk_prores_raw_end_frame(AVCodecContext *avctx)
     ff_vk_shader_update_desc_buffer(&ctx->s, exec, decode_shader,
                                     0, 1, 0,
                                     frame_data_buf,
-                                    0, prr->nb_tiles*sizeof(TileData),
+                                    0, 64 + prr->nb_tiles*sizeof(TileData),
                                     VK_FORMAT_UNDEFINED);
 
     ff_vk_exec_bind_shader(&ctx->s, exec, decode_shader);
@@ -208,7 +211,6 @@ static int vk_prores_raw_end_frame(AVCodecContext *avctx)
         .tile_size[0] = prr->tw,
         .tile_size[1] = prr->th,
     };
-    memcpy(pd_decode.qmat, prr->qmat, 64);
     ff_vk_shader_update_push_const(&ctx->s, exec, decode_shader,
                                    VK_SHADER_STAGE_COMPUTE_BIT,
                                    0, sizeof(pd_decode), &pd_decode);
@@ -239,7 +241,7 @@ static int vk_prores_raw_end_frame(AVCodecContext *avctx)
     ff_vk_shader_update_desc_buffer(&ctx->s, exec, idct_shader,
                                     0, 1, 0,
                                     frame_data_buf,
-                                    0, prr->nb_tiles*sizeof(TileData),
+                                    0, 64 + prr->nb_tiles*sizeof(TileData),
                                     VK_FORMAT_UNDEFINED);
     ff_vk_exec_bind_shader(&ctx->s, exec, idct_shader);
     ff_vk_shader_update_push_const(&ctx->s, exec, idct_shader,
@@ -275,7 +277,6 @@ static int add_common_data(AVCodecContext *avctx, FFVulkanContext *s,
     GLSLC(1,    u8buf pkt_data;                                                      );
     GLSLC(1,    ivec2 frame_size;                                                    );
     GLSLC(1,    ivec2 tile_size;                                                     );
-    GLSLC(1,    uint8_t qmat[64];                                                    );
     GLSLC(0, };                                                                      );
     GLSLC(0,                                                                         );
     ff_vk_shader_add_push_const(shd, 0, sizeof(DecodePushData),
@@ -298,7 +299,7 @@ static int add_common_data(AVCodecContext *avctx, FFVulkanContext *s,
             .stages      = VK_SHADER_STAGE_COMPUTE_BIT,
             .mem_layout  = "scalar",
             .mem_quali   = "readonly",
-            .buf_content = "TileData tile_data[];",
+            .buf_content = "uint8_t qmat[64];\n    TileData tile_data[];",
         },
     };
 
