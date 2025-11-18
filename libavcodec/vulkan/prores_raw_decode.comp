@@ -99,9 +99,11 @@ int16_t get_value(int16_t codebook)
 
 #define TODCCODEBOOK(x) ((x + 1) >> 1)
 
-void store_val(ivec2 offs, int blk, int c, int16_t v)
+void store_val(ivec2 offs, int blk, int c, int v)
 {
-    imageStore(dst, offs + 2*ivec2(blk*8 + (c & 7), c >> 3), ivec4(v));
+    int tmp = abs(clamp(v, 0, (1 << 15) - 1));
+    tmp |= int(v < 0) << 15;
+    imageStore(dst, offs + 2*ivec2(blk*8 + (c & 7), c >> 3), ivec4(tmp));
 }
 
 void read_dc_vals(ivec2 offs, int nb_blocks)
