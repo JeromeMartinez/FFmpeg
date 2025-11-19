@@ -20,7 +20,7 @@
 
 TYPE read_data(int off)
 {
-    TYPE p = data[off];
+    TYPE p = pd.data[off];
     if (big_endian > 0)
         p = TYPE_REVERSE(p);
     return p;

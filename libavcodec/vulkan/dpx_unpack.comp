@@ -20,7 +20,7 @@
 
 uint32_t read_data(uint off)
 {
-    uint32_t p = data[off];
+    uint32_t p = pd.data[off];
     if (big_endian > 0)
         p = reverse4(p);
     return p;

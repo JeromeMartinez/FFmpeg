@@ -48,6 +48,7 @@ typedef struct DPXVulkanDecodeContext {
 } DPXVulkanDecodeContext;
 
 typedef struct DecodePushData {
+    VkDeviceAddress pd;
     int stride;
     int big_endian;
     int shift;
@@ -177,16 +178,12 @@ static int vk_dpx_end_frame(AVCodecContext *avctx)
                                   0, 0,
                                   VK_IMAGE_LAYOUT_GENERAL,
                                   VK_NULL_HANDLE);
-    ff_vk_shader_update_desc_buffer(&ctx->s, exec, shd,
-                                    0, 1, 0,
-                                    slices_buf,
-                                    0, slices_buf->size,
-                                    VK_FORMAT_UNDEFINED);
 
     ff_vk_exec_bind_shader(&ctx->s, exec, shd);
 
     /* Update push data */
     DecodePushData pd = (DecodePushData) {
+        .pd = slices_buf->address,
         .stride = dpx->stride,
         .big_endian = dpx->endian,
         .components = dpx->components,
@@ -243,7 +240,14 @@ static int init_shader(AVCodecContext *avctx, FFVulkanContext *s,
     /* Common codec header */
     GLSLD(ff_source_common_comp);
 
+    GLSLC(0, layout(buffer_reference, buffer_reference_align = 4) buffer PixBuf {  );
+    GLSLF(1,    %s data[];                                     ,bits ==  8 ? "uint8_t" :
+                                                                bits == 16 ? "uint16_t" :
+                                                                             "uint32_t");
+    GLSLC(0, };                                                               );
+
     GLSLC(0, layout(push_constant, scalar) uniform pushConstants {            );
+    GLSLC(1,     PixBuf pd;                                                   );
     GLSLC(1,     int stride;                                                  );
     GLSLC(1,     int big_endian;                                              );
     GLSLC(1,     int shift;                                                   );
@@ -267,18 +271,8 @@ static int init_shader(AVCodecContext *avctx, FFVulkanContext *s,
             .elems      = av_pix_fmt_count_planes(dec_frames_ctx->sw_format),
             .stages     = VK_SHADER_STAGE_COMPUTE_BIT,
         },
-        {
-            .name        = "data_buf",
-            .type        = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
-            .stages      = VK_SHADER_STAGE_COMPUTE_BIT,
-            .mem_layout  = "scalar",
-            .mem_quali   = "readonly",
-            .buf_content = bits ==  8 ? "uint8_t  data[];" :
-                           bits == 16 ? "uint16_t data[];" :
-                                        "uint32_t data[];",
-        },
     };
-    RET(ff_vk_shader_add_descriptor_set(s, shd, desc_set, 2, 0, 0));
+    RET(ff_vk_shader_add_descriptor_set(s, shd, desc_set, 1, 0, 0));
 
     if (bits == 10 || bits == 12) {
         if (bits == 10)
