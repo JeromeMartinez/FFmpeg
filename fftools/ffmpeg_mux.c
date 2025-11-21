@@ -206,6 +206,67 @@ static int mux_fixup_ts(Muxer *mux, MuxStream *ms, AVPacket *pkt)
     return 0;
 }
 
+static int side_data_inject(AVPacket *pkt, const SideDataStorage *storage)
+{
+    for (int i = 0; i < storage->nb_elems; i++) {
+        if (storage->types[i] != AV_PKT_DATA_S12M_TIMECODE)
+            continue;
+
+        uint8_t *dst = av_packet_new_side_data(pkt, storage->types[i], storage->sizes[i]);
+        if (!dst)
+            return AVERROR(ENOMEM);
+        memcpy(dst, storage->datas[i], storage->sizes[i]);
+    }
+
+    return 0;
+}
+
+static void side_data_free(SideDataStorage *storage)
+{
+    for (int i = 0; i < storage->nb_elems; i++)
+        av_free(storage->datas[i]);
+    av_free(storage->datas);
+    av_free(storage->types);
+    av_free(storage->sizes);
+
+    memset(storage, 0, sizeof(*storage));
+}
+
+static int side_data_queue_pop(SideDataQueue *q, SideDataStorage *out)
+{
+    pthread_mutex_lock(&q->lock);
+
+    if (!q->head) {
+        pthread_mutex_unlock(&q->lock);
+        return 0;
+    }
+
+    SideDataNode *node = q->head;
+    q->head = node->next;
+    if (!q->head)
+        q->tail = NULL;
+
+    *out = node->sd;
+    av_free(node);
+
+    pthread_mutex_unlock(&q->lock);
+    return 1;
+}
+
+static int side_data_fill(AVPacket *pkt, SideDataQueue *queues)
+{
+    SideDataStorage sd = {0};
+    int has_data = side_data_queue_pop(&queues[pkt->stream_index], &sd);
+    if (!has_data) {
+        return 0;
+    }
+
+    int ret = side_data_inject(pkt, &sd);
+    side_data_free(&sd);
+
+    return ret;
+}
+
 static int write_packet(Muxer *mux, OutputStream *ost, AVPacket *pkt)
 {
     MuxStream *ms = ms_from_ost(ost);
@@ -213,6 +274,8 @@ static int write_packet(Muxer *mux, OutputStream *ost, AVPacket *pkt)
     int64_t fs;
     uint64_t frame_num;
     int ret;
+
+    side_data_fill(pkt, sd_queues);
 
     fs = filesize(s->pb);
     atomic_store(&mux->last_filesize, fs);

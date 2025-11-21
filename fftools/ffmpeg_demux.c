@@ -721,6 +721,69 @@ static int demux_thread_init(DemuxThreadContext *dt)
     return 0;
 }
 
+static int side_data_copy(const AVPacket *pkt, SideDataStorage *storage)
+{
+    if (pkt->side_data_elems == 0)
+        return 0;
+
+    storage->nb_elems = pkt->side_data_elems;
+    storage->types = av_malloc_array(storage->nb_elems, sizeof(storage->types[0]));
+    storage->datas = av_malloc_array(storage->nb_elems, sizeof(storage->datas[0]));
+    storage->sizes = av_malloc_array(storage->nb_elems, sizeof(storage->sizes[0]));
+    if (!storage->types || !storage->datas || !storage->sizes) {
+        return AVERROR(ENOMEM);
+    }
+
+    for (int i = 0; i < storage->nb_elems; i++) {
+        const AVPacketSideData *sd = &pkt->side_data[i];
+        storage->types[i] = sd->type;
+        storage->sizes[i] = sd->size;
+        storage->datas[i] = av_malloc(sd->size);
+        if (!storage->datas[i])
+            return AVERROR(ENOMEM);
+        memcpy(storage->datas[i], sd->data, sd->size);
+    }
+
+    return 0;
+}
+
+static void side_data_queue_init(SideDataQueue *q)
+{
+    q->head = q->tail = NULL;
+    pthread_mutex_init(&q->lock, NULL);
+    pthread_cond_init(&q->cond, NULL);
+}
+
+static void side_data_queue_push(SideDataQueue *q, const SideDataStorage *sd)
+{
+    SideDataNode *node = av_malloc(sizeof(SideDataNode));
+    node->sd = *sd;
+    node->next = NULL;
+
+    pthread_mutex_lock(&q->lock);
+    if (q->tail)
+        q->tail->next = node;
+    else
+        q->head = node;
+    q->tail = node;
+    pthread_cond_signal(&q->cond);
+    pthread_mutex_unlock(&q->lock);
+}
+
+static int side_data_queue(const AVPacket *pkt, SideDataQueue *queues)
+{
+    SideDataStorage sd = {0};
+    int ret = side_data_copy(pkt, &sd);
+    if (ret < 0)
+        return ret;
+
+    side_data_queue_push(&queues[pkt->stream_index], &sd);
+
+    return 0;
+}
+
+SideDataQueue sd_queues[MAX_STREAMS];
+
 static int input_thread(void *arg)
 {
     Demuxer   *d = arg;
@@ -741,11 +804,24 @@ static int input_thread(void *arg)
     d->read_started    = 1;
     d->wallclock_start = av_gettime_relative();
 
+    int nb_streams = f->ctx->nb_streams;
+    for (int i = 0; i < nb_streams; i++)
+        side_data_queue_init(&sd_queues[i]);
+
     while (1) {
         DemuxStream *ds;
         unsigned send_flags = 0;
 
         ret = av_read_frame(f->ctx, dt.pkt_demux);
+        if (dt.pkt_demux->side_data_elems) {
+            AVStream *st = f->ctx->streams[dt.pkt_demux->stream_index];
+            if (st->codecpar->codec_type == AVMEDIA_TYPE_VIDEO) {
+                int ret = side_data_queue(dt.pkt_demux, sd_queues);
+                if (ret < 0) {
+                    av_log(d, AV_LOG_ERROR, "Error during side data queue: %s\n", av_err2str(ret));
+                }
+            }
+        }
 
         if (ret == AVERROR(EAGAIN)) {
             av_usleep(10000);

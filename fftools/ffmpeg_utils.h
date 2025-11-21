@@ -27,6 +27,29 @@
 
 #include "libavcodec/packet.h"
 
+
+typedef struct SideDataStorage {
+    enum AVPacketSideDataType *types;
+    uint8_t **datas;
+    int *sizes;
+    int nb_elems;
+} SideDataStorage;
+
+typedef struct SideDataNode {
+    SideDataStorage sd;
+    struct SideDataNode *next;
+} SideDataNode;
+
+typedef struct SideDataQueue {
+    SideDataNode *head;
+    SideDataNode *tail;
+    pthread_mutex_t lock;
+    pthread_cond_t cond;
+} SideDataQueue;
+
+#define MAX_STREAMS 64   // compatible pour presque tous les containers
+extern SideDataQueue sd_queues[MAX_STREAMS];
+
 typedef struct Timestamp {
     int64_t    ts;
     AVRational tb;
