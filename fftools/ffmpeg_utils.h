@@ -19,6 +19,7 @@
 #ifndef FFTOOLS_FFMPEG_UTILS_H
 #define FFTOOLS_FFMPEG_UTILS_H
 
+#include <pthread.h>
 #include <stdint.h>
 
 #include "libavutil/common.h"
@@ -26,6 +27,28 @@
 #include "libavutil/rational.h"
 
 #include "libavcodec/packet.h"
+
+
+typedef struct SideDataStorage {
+    enum AVPacketSideDataType *types;
+    uint8_t **datas;
+    int *sizes;
+    int nb_elems;
+} SideDataStorage;
+
+typedef struct SideDataNode {
+    SideDataStorage sd;
+    struct SideDataNode *next;
+} SideDataNode;
+
+typedef struct SideDataQueue {
+    SideDataNode *head;
+    SideDataNode *tail;
+    pthread_mutex_t lock;
+    pthread_cond_t cond;
+} SideDataQueue;
+
+extern SideDataQueue sd_queues[1]; //TODO: by stream_index
 
 typedef struct Timestamp {
     int64_t    ts;
