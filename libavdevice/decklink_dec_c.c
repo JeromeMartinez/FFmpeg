@@ -60,7 +60,7 @@ static const AVOption options[] = {
     { "two_sub_device_full",      NULL,                               0,  AV_OPT_TYPE_CONST, { .i64 = 4}, 0, 0,    DEC, .unit = "duplex_mode"},
     { "four_sub_device_half",     NULL,                               0,  AV_OPT_TYPE_CONST, { .i64 = 5}, 0, 0,    DEC, .unit = "duplex_mode"},
 #endif
-    { "timecode_format", "timecode format",           OFFSET(tc_format),  AV_OPT_TYPE_INT,   { .i64 = 0}, 0, 8,    DEC, .unit = "tc_format"},
+    { "timecode_format", "timecode format",           OFFSET(tc_format),  AV_OPT_TYPE_INT,   { .i64 = 0}, 0, 9,    DEC, .unit = "tc_format"},
     { "none",          NULL,                                          0,  AV_OPT_TYPE_CONST, { .i64 = 0}, 0, 0,    DEC, .unit = "tc_format"},
     { "rp188vitc",     NULL,                                          0,  AV_OPT_TYPE_CONST, { .i64 = 1}, 0, 0,    DEC, .unit = "tc_format"},
     { "rp188vitc2",    NULL,                                          0,  AV_OPT_TYPE_CONST, { .i64 = 2}, 0, 0,    DEC, .unit = "tc_format"},
@@ -72,6 +72,7 @@ static const AVOption options[] = {
 #if BLACKMAGIC_DECKLINK_API_VERSION >= 0x0b000000
     { "rp188hfr",      NULL,                                          0,  AV_OPT_TYPE_CONST, { .i64 = 8}, 0, 0,    DEC, .unit = "tc_format"},
 #endif
+    { "all",           NULL,                                          0,  AV_OPT_TYPE_CONST, { .i64 = 9}, 0, 0,    DEC, .unit = "tc_format"},
     { "video_input",  "video input",              OFFSET(video_input),    AV_OPT_TYPE_INT,   { .i64 = 0}, 0, 6,    DEC, .unit = "video_input"},
     { "unset",         NULL,                                          0,  AV_OPT_TYPE_CONST, { .i64 = 0}, 0, 0,    DEC, .unit = "video_input"},
     { "sdi",           NULL,                                          0,  AV_OPT_TYPE_CONST, { .i64 = 1}, 0, 0,    DEC, .unit = "video_input"},

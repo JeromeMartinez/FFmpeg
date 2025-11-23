@@ -238,6 +238,7 @@ static const BMDTimecodeFormat decklink_timecode_format_map[] = {
 #else
     (BMDTimecodeFormat)0,
 #endif
+    (BMDTimecodeFormat)1, // All
 };
 
 static const BMDLinkConfiguration decklink_link_conf_map[] = {
