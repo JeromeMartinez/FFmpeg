@@ -736,6 +736,33 @@ static int get_frame_timecode(AVFormatContext *avctx, decklink_ctx *ctx, AVTimec
 {
     AVRational frame_rate = ctx->video_st->r_frame_rate;
     int ret;
+    if (ctx->tc_format == (BMDTimecodeFormat)1) {
+        int count = 0;
+        ret = get_bmd_timecode(avctx, tc + count, frame_rate, bmdTimecodeRP188VITC1, videoFrame);
+        if (ret != AVERROR(ENOENT))
+            count++;
+        ret = get_bmd_timecode(avctx, tc + count, frame_rate, bmdTimecodeRP188VITC2, videoFrame);
+        if (ret != AVERROR(ENOENT))
+            count++;
+        ret = get_bmd_timecode(avctx, tc + count, frame_rate, bmdTimecodeRP188LTC, videoFrame);
+        if (ret != AVERROR(ENOENT))
+            count++;
+#if BLACKMAGIC_DECKLINK_API_VERSION >= 0x0b000000
+        ret = get_bmd_timecode(avctx, tc + count, frame_rate, bmdTimecodeRP188HighFrameRate, videoFrame);
+        if (ret != AVERROR(ENOENT))
+            count++;
+#endif
+        ret = get_bmd_timecode(avctx, tc + count, frame_rate, bmdTimecodeVITC, videoFrame);
+        if (ret != AVERROR(ENOENT))
+            count++;
+        ret = get_bmd_timecode(avctx, tc + count, frame_rate, bmdTimecodeVITCField2, videoFrame);
+        if (ret != AVERROR(ENOENT))
+            count++;
+        ret = get_bmd_timecode(avctx, tc + count, frame_rate, bmdTimecodeSerial, videoFrame);
+        if (ret != AVERROR(ENOENT))
+            count++;
+       return count;
+    }
     /* 50/60 fps content has alternating VITC1 and VITC2 timecode (see SMPTE ST
      * 12-2, section 7), so the native ordering of RP188Any (HFR, VITC1, LTC,
      * VITC2) would not work because LTC might not contain the field flag.
@@ -753,7 +780,7 @@ static int get_frame_timecode(AVFormatContext *avctx, decklink_ctx *ctx, AVTimec
     } else {
        ret = get_bmd_timecode(avctx, tc, frame_rate, ctx->tc_format, videoFrame);
     }
-    return ret;
+    return ret >= 0;
 }
 
 HRESULT decklink_input_callback::VideoInputFrameArrived(
@@ -848,22 +875,23 @@ HRESULT decklink_input_callback::VideoInputFrameArrived(
 
             // Handle Timecode (if requested)
             if (ctx->tc_format) {
-                AVTimecode tcr;
-                if (get_frame_timecode(avctx, ctx, &tcr, videoFrame) >= 0) {
+                AVTimecode tcr[8];
+                int count = get_frame_timecode(avctx, ctx, &tcr[0], videoFrame);
+                if (count > 0) {
                     char tcstr[AV_TIMECODE_STR_SIZE];
-                    const char *tc = av_timecode_make_string(&tcr, tcstr, 0);
+                    const char *tc = av_timecode_make_string(&tcr[0], tcstr, 0);
                     if (tc) {
                         AVDictionary* metadata_dict = NULL;
                         uint8_t* packed_metadata;
 
                         if (av_cmp_q(ctx->video_st->r_frame_rate, av_make_q(60, 1)) < 1) {
-                            uint64_t tc_data = av_timecode_expand_to_64bit(av_timecode_get_smpte_from_framenum(&tcr, 0));
-                            int size = sizeof(uint64_t) * 4;
+                            int size = sizeof(uint64_t) * (1 + count);
                             uint64_t *sd = (uint64_t *)av_packet_new_side_data(&pkt, AV_PKT_DATA_S12M_TIMECODE, size);
 
                             if (sd) {
-                                *sd       = 1;       // one TC
-                                *(sd + 1) = tc_data; // TC
+                                *sd = count;
+                                for (int i = 0; i < count; i++)
+                                    *(sd + 1 + i) = av_timecode_expand_to_64bit(av_timecode_get_smpte_from_framenum(&tcr[i], 0));
                             }
                         }
 
