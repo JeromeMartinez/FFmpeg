@@ -275,6 +275,8 @@ static int write_packet(Muxer *mux, OutputStream *ost, AVPacket *pkt)
     uint64_t frame_num;
     int ret;
 
+    printf("xxxxxx write_packet\n");
+
     side_data_fill(pkt, sd_queues);
 
     fs = filesize(s->pb);

@@ -792,6 +792,8 @@ static int input_thread(void *arg)
     DemuxThreadContext dt;
 
     int ret = 0;
+    
+    printf("xxxxxx input_thread\n");
 
     ret = demux_thread_init(&dt);
     if (ret < 0)
