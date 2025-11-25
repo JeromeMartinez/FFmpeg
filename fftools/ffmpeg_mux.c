@@ -274,10 +274,15 @@ static int write_packet(Muxer *mux, OutputStream *ost, AVPacket *pkt)
     int64_t fs;
     uint64_t frame_num;
     int ret;
-
-    printf("xxxxxx write_packet\n");
+    AVStream *st;
 
     side_data_fill(pkt, sd_queues);
+    st = s->streams[pkt->stream_index];
+    if (st->codecpar->codec_type == AVMEDIA_TYPE_VIDEO) {
+        printf("xxxxxx write_packet side_data_elems %i\n", pkt->side_data_elems);
+        for (int i = 0; i < pkt->side_data_elems; i++)
+            printf("xxxxxx write_packet side_data %s\n", av_packet_side_data_name(pkt->side_data[i].type));
+    }
 
     fs = filesize(s->pb);
     atomic_store(&mux->last_filesize, fs);

@@ -847,6 +847,7 @@ HRESULT decklink_input_callback::VideoInputFrameArrived(
             if (ctx->tc_format) {
                 AVTimecode tcr[8];
                 int count = get_frame_timecode(avctx, ctx, &tcr[0], videoFrame);
+                printf("xxxxxx decklink get_frame_timecode %i\n", count);
                 if (count > 0) {
                     char tcstr[AV_TIMECODE_STR_SIZE];
                     const char *tc = av_timecode_make_string(&tcr[0], tcstr, 0);
@@ -854,12 +855,15 @@ HRESULT decklink_input_callback::VideoInputFrameArrived(
                         AVDictionary* metadata_dict = NULL;
                         uint8_t* packed_metadata;
 
+                        printf("xxxxxx decklink av_cmp_q\n");
                         if (av_cmp_q(ctx->video_st->r_frame_rate, av_make_q(60, 1)) < 1) {
                             int size = sizeof(uint64_t) * (1 + count);
                             uint64_t *sd = (uint64_t *)av_packet_new_side_data(&pkt, AV_PKT_DATA_S12M_TIMECODE, size);
 
+                            printf("xxxxxx decklink av_cmp_q OK\n");
                             if (sd) {
-                                *sd       = count;
+                                printf("xxxxxx decklink sd OK\n");
+                                *sd = count;
                                 for (int i = 0; i < count; i++)
                                     *(sd + 1 + i) = av_timecode_expand_to_64bit(av_timecode_get_smpte_from_framenum(&tcr[i], 0));
                             }

@@ -813,10 +813,16 @@ static int input_thread(void *arg)
     while (1) {
         DemuxStream *ds;
         unsigned send_flags = 0;
+        AVStream *st;
 
         ret = av_read_frame(f->ctx, dt.pkt_demux);
+        st = f->ctx->streams[dt.pkt_demux->stream_index];
+        if (st->codecpar->codec_type == AVMEDIA_TYPE_VIDEO) {
+            printf("xxxxxx av_read_frame side_data_elems %i\n", dt.pkt_demux->side_data_elems);
+            for (int i = 0; i < dt.pkt_demux->side_data_elems; i++)
+                printf("xxxxxx av_read_frame side_data %s\n", av_packet_side_data_name(dt.pkt_demux->side_data[i].type));
+        }
         if (dt.pkt_demux->side_data_elems) {
-            AVStream *st = f->ctx->streams[dt.pkt_demux->stream_index];
             if (st->codecpar->codec_type == AVMEDIA_TYPE_VIDEO) {
                 int ret = side_data_queue(dt.pkt_demux, sd_queues);
                 if (ret < 0) {
