@@ -770,14 +770,14 @@ static void side_data_queue_push(SideDataQueue *q, const SideDataStorage *sd)
     pthread_mutex_unlock(&q->lock);
 }
 
-static int side_data_queue(const AVPacket *pkt, SideDataQueue *queues)
+static int side_data_queue(const AVPacket *pkt, SideDataQueue *queues, int index)
 {
     SideDataStorage sd = {0};
     int ret = side_data_copy(pkt, &sd);
     if (ret < 0)
         return ret;
 
-    side_data_queue_push(&queues[pkt->stream_index], &sd);
+    side_data_queue_push(&queues[index], &sd);
 
     return 0;
 }
@@ -824,7 +824,7 @@ static int input_thread(void *arg)
         }
         if (dt.pkt_demux->side_data_elems) {
             if (st->codecpar->codec_type == AVMEDIA_TYPE_VIDEO) {
-                int ret = side_data_queue(dt.pkt_demux, sd_queues);
+                int ret = side_data_queue(dt.pkt_demux, sd_queues, st->codecpar->codec_type);
                 if (ret < 0) {
                     av_log(d, AV_LOG_ERROR, "Error during side data queue: %s\n", av_err2str(ret));
                 }

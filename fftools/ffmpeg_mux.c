@@ -253,10 +253,10 @@ static int side_data_queue_pop(SideDataQueue *q, SideDataStorage *out)
     return 1;
 }
 
-static int side_data_fill(AVPacket *pkt, SideDataQueue *queues)
+static int side_data_fill(AVPacket *pkt, SideDataQueue *queues, int index)
 {
     SideDataStorage sd = {0};
-    int has_data = side_data_queue_pop(&queues[pkt->stream_index], &sd);
+    int has_data = side_data_queue_pop(&queues[index], &sd);
     if (!has_data) {
         return 0;
     }
@@ -274,10 +274,9 @@ static int write_packet(Muxer *mux, OutputStream *ost, AVPacket *pkt)
     int64_t fs;
     uint64_t frame_num;
     int ret;
-    AVStream *st;
+    AVStream *st = s->streams[pkt->stream_index];
 
-    side_data_fill(pkt, sd_queues);
-    st = s->streams[pkt->stream_index];
+    side_data_fill(pkt, sd_queues, st->codecpar->codec_type);
     if (st->codecpar->codec_type == AVMEDIA_TYPE_VIDEO) {
         printf("xxxxxx write_packet %i side_data_elems %i\n", pkt->stream_index, pkt->side_data_elems);
         for (int i = 0; i < pkt->side_data_elems; i++)
