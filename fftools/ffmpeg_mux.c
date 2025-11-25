@@ -279,9 +279,9 @@ static int write_packet(Muxer *mux, OutputStream *ost, AVPacket *pkt)
     side_data_fill(pkt, sd_queues);
     st = s->streams[pkt->stream_index];
     if (st->codecpar->codec_type == AVMEDIA_TYPE_VIDEO) {
-        printf("xxxxxx write_packet side_data_elems %i\n", pkt->side_data_elems);
+        printf("xxxxxx write_packet %i side_data_elems %i\n", pkt->stream_index, pkt->side_data_elems);
         for (int i = 0; i < pkt->side_data_elems; i++)
-            printf("xxxxxx write_packet side_data %s\n", av_packet_side_data_name(pkt->side_data[i].type));
+            printf("xxxxxx write_packet %i side_data %s\n", pkt->stream_index, av_packet_side_data_name(pkt->side_data[i].type));
     }
 
     fs = filesize(s->pb);

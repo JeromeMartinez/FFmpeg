@@ -818,9 +818,9 @@ static int input_thread(void *arg)
         ret = av_read_frame(f->ctx, dt.pkt_demux);
         st = f->ctx->streams[dt.pkt_demux->stream_index];
         if (st->codecpar->codec_type == AVMEDIA_TYPE_VIDEO) {
-            printf("xxxxxx av_read_frame side_data_elems %i\n", dt.pkt_demux->side_data_elems);
+            printf("xxxxxx av_read_frame %i side_data_elems %i\n", dt.pkt_demux->stream_index, dt.pkt_demux->side_data_elems);
             for (int i = 0; i < dt.pkt_demux->side_data_elems; i++)
-                printf("xxxxxx av_read_frame side_data %s\n", av_packet_side_data_name(dt.pkt_demux->side_data[i].type));
+                printf("xxxxxx av_read_frame %i side_data %s\n", dt.pkt_demux->stream_index, av_packet_side_data_name(dt.pkt_demux->side_data[i].type));
         }
         if (dt.pkt_demux->side_data_elems) {
             if (st->codecpar->codec_type == AVMEDIA_TYPE_VIDEO) {
