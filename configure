@@ -4962,11 +4962,15 @@ fi
 exesuf() {
     case $1 in
         mingw32*|mingw64*|msys*|win32|win64|cygwin*|*-dos|freedos|opendos|os/2*|symbian|windows_nt) echo .exe ;;
+        *)
+            case $2 in
+                msvc) echo .exe ;;
+            esac ;;
     esac
 }
 
-EXESUF=$(exesuf $target_os)
-HOSTEXESUF=$(exesuf $host_os)
+EXESUF=$(exesuf $target_os $toolchain)
+HOSTEXESUF=$(exesuf $host_os $toolchain)
 
 # set temporary file name
 : ${TMPDIR:=$TEMPDIR}
