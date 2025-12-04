@@ -28,6 +28,8 @@
 #define AVUTIL_TIMECODE_H
 
 #include <stdint.h>
+#include "libavformat/avformat.h"
+#include "libavcodec/packet.h"
 #include "rational.h"
 
 #define AV_TIMECODE_STR_SIZE 23

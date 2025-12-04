@@ -3012,6 +3012,8 @@ AVRational av_stream_get_codec_timebase(const AVStream *st);
 #endif
 
 
+int av_timecode_add_to_side_data(AVFormatContext *ctx, AVPacket *pkt, unsigned flags, uint64_t tc, uint32_t id, const char *title);
+
 /**
  * @}
  */

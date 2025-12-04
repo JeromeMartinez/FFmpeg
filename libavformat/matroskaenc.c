@@ -201,9 +201,11 @@ typedef struct mkv_track {
     int64_t         last_timestamp;
     int64_t         duration;
     int64_t         duration_offset;
+    int64_t         more_tags_offset;
     uint64_t        max_blockaddid;
     int             itu_t_t35_count;
     int             timecode_count;
+    char            timecode_label[8][16];
     int64_t         blockadditionmapping_offset;
     int             codecpriv_offset;
     unsigned        codecpriv_size;     ///< size reserved for CodecPrivate excluding header+length field
@@ -3482,6 +3484,46 @@ static int mkv_write_tags(AVFormatContext *s)
             return ret;
         if (seekable)
             track->duration_offset = avio_tell(mkv->tags.bc) - DURATION_SIMPLETAG_SIZE;
+
+        if (st->codecpar->codec_type == AVMEDIA_TYPE_VIDEO)
+        {
+            /*
+            AVIOContext *pb = mkv->tmp_bc;
+            ebml_master targets;
+
+            targets = start_ebml_master(pb, MATROSKA_ID_TAGTARGETS, 4 + 1 + 8);
+            put_ebml_uid(pb, MATROSKA_ID_TAGTARGETS_TRACKUID, track->uid);
+            put_ebml_uint(pb, MATROSKA_ID_TAGTARGETS_BLOCKADDID, 101);
+            end_ebml_master(pb, targets);
+            
+            targets = start_ebml_master(pb, MATROSKA_ID_SIMPLETAG, 4 + 1 + 8);
+            put_ebml_string(pb, MATROSKA_ID_TAGNAME, "VITC");
+            end_ebml_master(pb, targets);
+
+            
+
+            uint8_t *buf;
+            int ret = 0, size, tag_written = 0;
+
+            AVIOContext *const tmp_bc = pb;
+            size = avio_get_dyn_buf(tmp_bc, &buf);
+            if (tmp_bc->error) {
+                ret = tmp_bc->error;
+                //goto end;
+            }
+            if (!pb) {
+                ret = start_ebml_master_crc32(&pb, mkv);
+                //if (ret < 0)
+                    //goto end;
+            }
+            ffio_reset_dyn_buf(pb);
+            put_ebml_binary(mkv->tags.bc, MATROSKA_ID_TAG, buf, size);
+            */
+
+            track->more_tags_offset = avio_tell(mkv->tags.bc);
+            put_ebml_void(mkv->tags.bc, 8 * 32);
+
+        }
     }
 
     if (mkv->nb_attachments && !IS_WEBM(mkv)) {
@@ -4091,12 +4133,16 @@ static int mkv_write_block(void *logctx, MatroskaMuxContext *mkv,
     uint64_t count = 0;
     if (par->codec_type == AVMEDIA_TYPE_VIDEO) {
         side_data = av_packet_get_side_data(pkt, AV_PKT_DATA_S12M_TIMECODE, &side_data_size);
-        if (side_data && side_data_size >= sizeof(uint64_t)) {
-            uint64_t *side_data_64 = (uint64_t*)side_data;
-            count = side_data_64[0];
-            if (side_data_size / sizeof(uint64_t) - 1 >= count ) {
+        if (side_data && side_data_size >= 8) {
+
+            // header: 0-3 allocated size; 4 count; 5 byte size per item; 6 flags; 7 reserved
+            // flags: 0 id present; 1 title present
+            // content: 8 bytes tc; 4 bytes id; 16 bytes 0 terminated or 16 bytes UTF8 title
+
+            uint8_t count = *(side_data + 4);
+            uint8_t item_size = *(side_data + 5);
+            if (item_size && (side_data_size - 8) / item_size >= count ) {
                 uint64_t written_count = count;
-                side_data_64++;
                 if (count > MAX_MATROSKA_BLOCK_ADD_SMPTE_12M) {
                     if (count > track->timecode_count) {
                         av_log(logctx, AV_LOG_WARNING, "Too many SMPTE timecode streams in side data, discarding %"PRIu64" timecode streams.\n", count - MAX_MATROSKA_BLOCK_ADD_SMPTE_12M);
@@ -4104,10 +4150,15 @@ static int mkv_write_block(void *logctx, MatroskaMuxContext *mkv,
                     written_count = MAX_MATROSKA_BLOCK_ADD_SMPTE_12M;
                 }
                 for (uint64_t i = 0; i < written_count; i++) {
-                    uint64_t tc = side_data_64[i];
+                    uint8_t *sd_base = side_data + 8 + item_size * i;
+                    uint64_t *sd_tc = (uint64_t*)sd_base;
+                    uint32_t *sd_id = (uint32_t*)(sd_base + 8);
+                    char* sd_title = (char*)(sd_base + 8 + 4);
                     uint8_t *payload = timecode_buf[i];
-                    AV_WB64(payload, tc);
-                    av_log(logctx, AV_LOG_DEBUG, "Writing SMPTE timecode from side data, pos %"PRIu64", to BlockAdditional: 0x%016lX (RFC 5484)\n", i + 1, tc);
+                    AV_WB64(payload, *sd_tc);
+                    memcpy(track->timecode_label[i], sd_title, 16);
+                    
+                    av_log(logctx, AV_LOG_DEBUG, "Writing SMPTE timecode from side data, pos %"PRIu64", to BlockAdditional: 0x%016lX (RFC 5484)\n", i + 1, *sd_tc);
 
                     int blockaddid = MATROSKA_BLOCK_ADD_ID_SMPTE_12M + i;
                     mkv_write_blockadditional(&writer, payload, 8, blockaddid);
@@ -4584,6 +4635,50 @@ after_cues:
                 if (remaining_video_track_space > 1) {
                     put_ebml_void(track_bc, remaining_video_track_space);
                 }
+                
+                int remaining_bytes = 8 * 32;
+                AVIOContext *pb = mkv->tmp_bc;
+                
+                avio_seek(mkv->tags.bc, track->more_tags_offset, SEEK_SET);
+
+                for (int i = 0; i < track->timecode_count; i++) {
+                    if (!*track->timecode_label[i])
+                        continue;
+                    
+                    ebml_master targets;
+
+                    targets = start_ebml_master(pb, MATROSKA_ID_TAGTARGETS, 4 + 1 + 8);
+                    put_ebml_uid(pb, MATROSKA_ID_TAGTARGETS_TRACKUID, track->uid);
+                    put_ebml_uint(pb, MATROSKA_ID_TAGTARGETS_BLOCKADDID, 101 + i);
+                    end_ebml_master(pb, targets);
+
+                    targets = start_ebml_master(pb, MATROSKA_ID_SIMPLETAG, 4 + 1 + 8);
+                    put_ebml_string(pb, MATROSKA_ID_TAGNAME, "TITLE");
+                    put_ebml_string(pb, MATROSKA_ID_TAGSTRING, track->timecode_label[i]);
+                    end_ebml_master(pb, targets);
+
+
+
+                    uint8_t *buf;
+                    int ret = 0, size, tag_written = 0;
+
+                    AVIOContext *const tmp_bc = pb;
+                    size = avio_get_dyn_buf(tmp_bc, &buf);
+                    if (tmp_bc->error) {
+                        ret = tmp_bc->error;
+                        //goto end;
+                    }
+                    if (!pb) {
+                        ret = start_ebml_master_crc32(&pb, mkv);
+                        //if (ret < 0)
+                            //goto end;
+                    }
+                    ffio_reset_dyn_buf(pb);
+                    
+                    put_ebml_binary(mkv->tags.bc, MATROSKA_ID_TAG, buf, size);
+                    remaining_bytes -= 3 + size;
+                }
+                put_ebml_void(mkv->tags.bc, remaining_bytes);
             }
         }
 

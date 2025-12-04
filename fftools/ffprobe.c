@@ -1014,6 +1014,7 @@ static void print_pkt_side_data(AVTextFormatContext *tfc,
     const char *name = av_packet_side_data_name(sd->type);
 
     avtext_print_section_header(tfc, sd, id_data);
+    av_log(NULL, AV_LOG_ERROR, "%s \n", name ? name : "unknown");
     print_str("side_data_type", name ? name : "unknown");
     if (sd->type == AV_PKT_DATA_DISPLAYMATRIX && sd->size >= 9*4) {
         print_displaymatrix(tfc, (const int32_t*)sd->data);
@@ -1358,14 +1359,32 @@ static void print_frame_side_data(AVTextFormatContext *tfc,
             av_timecode_make_mpeg_tc_string(tcbuf, *(int64_t *)(sd->data));
             print_str("timecode", tcbuf);
         } else if (sd->type == AV_FRAME_DATA_S12M_TIMECODE && sd->size >= 8) {
-            uint64_t *tc = (uint64_t*)sd->data;
-            int m = FFMIN(tc[0],3);
+            uint8_t *sd_count = (uint8_t*) (sd->data + 4);
+            uint8_t count = *sd_count;
             avtext_print_section_header(tfc, NULL, SECTION_ID_FRAME_SIDE_DATA_TIMECODE_LIST);
-            for (int j = 1; j <= m ; j++) {
+            for (int j = 0; j < count ; j++) {
+                uint8_t *sd_base = sd->data + 8 + (8 + 4 + 16) * j;
+                uint64_t *sd_tc = (uint64_t*)sd_base;
+                uint32_t *sd_id = (uint32_t*)(sd_base + 8);
+                char* sd_title = (char*)(sd_base + 8 + 4);
                 char tcbuf[AV_TIMECODE_STR_SIZE];
-                av_timecode_make_smpte_tc_string2(tcbuf, stream->avg_frame_rate, tc[j], 0, 0);
+                uint64_t id = *sd_id;
+                uint64_t tc = *sd_tc;
+                av_timecode_make_smpte_tc_string2(tcbuf, stream->avg_frame_rate, av_timecode_parse_from_64bit(tc), 0, 0);
                 avtext_print_section_header(tfc, NULL, SECTION_ID_FRAME_SIDE_DATA_TIMECODE);
                 print_str("value", tcbuf);
+                print_int("id", id);
+                char tctitlebuf[17];
+                int k = 0;
+                for (; k < 16; k++)
+                    if (!sd_title[k])
+                        break;
+                if (k >= 16) {
+                    memcpy(tctitlebuf, sd_title, k);
+                    tctitlebuf[k] = '\0';
+                    sd_title = tctitlebuf;
+                }
+                print_str("title", sd_title);
                 avtext_print_section_footer(tfc);
             }
             avtext_print_section_footer(tfc);
