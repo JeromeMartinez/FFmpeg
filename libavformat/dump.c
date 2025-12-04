@@ -431,7 +431,7 @@ static void dump_s12m_timecode(void *ctx, AVRational avg_frame_rate, const AVPac
 {
     const uint32_t *tc = (const uint32_t *)sd->data;
 
-    if ((sd->size != sizeof(uint32_t) * 4) || (tc[0] > 3)) {
+    if (sd->size < sizeof(uint32_t)) {
         av_log(ctx, AV_LOG_ERROR, "invalid data\n");
         return;
     }
@@ -475,15 +475,15 @@ static void dump_sidedata(void *ctx, const AVPacketSideData *side_data, int nb_s
     int i;
 
     if (nb_side_data)
-        av_log(ctx, log_level, "%sSide data:\n", indent);
+        av_log(ctx, AV_LOG_ERROR, "%sSide data:\n", indent);
 
     for (i = 0; i < nb_side_data; i++) {
         const AVPacketSideData *sd = &side_data[i];
         const char *name = av_packet_side_data_name(sd->type);
 
-        av_log(ctx, log_level, "%s  ", indent);
+        av_log(ctx, AV_LOG_ERROR, "%s  ", indent);
         if (name)
-            av_log(ctx, log_level, "%s: ", name);
+            av_log(ctx, AV_LOG_ERROR, "%s: ", name);
         switch (sd->type) {
         case AV_PKT_DATA_PARAM_CHANGE:
             dump_paramchange(ctx, sd, log_level);

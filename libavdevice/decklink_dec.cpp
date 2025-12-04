@@ -732,35 +732,49 @@ static int get_bmd_timecode(AVFormatContext *avctx, AVTimecode *tc, AVRational f
     return ret;
 }
 
-static int get_frame_timecode(AVFormatContext *avctx, decklink_ctx *ctx, AVTimecode *tc, IDeckLinkVideoInputFrame_v14_2_1 *videoFrame)
+static int get_frame_timecode(AVFormatContext *avctx, decklink_ctx *ctx, AVTimecode *tc, uint8_t *tc_kind, IDeckLinkVideoInputFrame_v14_2_1 *videoFrame)
 {
     AVRational frame_rate = ctx->video_st->r_frame_rate;
     int ret;
     if (ctx->tc_format == (BMDTimecodeFormat)1) {
         int count = 0;
         ret = get_bmd_timecode(avctx, tc + count, frame_rate, bmdTimecodeRP188VITC1, videoFrame);
-        if (ret != AVERROR(ENOENT))
+        if (ret != AVERROR(ENOENT)) {
+            tc_kind[count] = 0;
             count++;
+        }
         ret = get_bmd_timecode(avctx, tc + count, frame_rate, bmdTimecodeRP188VITC2, videoFrame);
-        if (ret != AVERROR(ENOENT))
+        if (ret != AVERROR(ENOENT)) {
+            tc_kind[count] = 1;
             count++;
+        }
         ret = get_bmd_timecode(avctx, tc + count, frame_rate, bmdTimecodeRP188LTC, videoFrame);
-        if (ret != AVERROR(ENOENT))
+        if (ret != AVERROR(ENOENT)) {
+            tc_kind[count] = 2;
             count++;
+        }
+        ret = get_bmd_timecode(avctx, tc + count, frame_rate, bmdTimecodeVITC, videoFrame);
+        if (ret != AVERROR(ENOENT)) {
+            tc_kind[count] = 3;
+            count++;
+        }
+        ret = get_bmd_timecode(avctx, tc + count, frame_rate, bmdTimecodeVITCField2, videoFrame);
+        if (ret != AVERROR(ENOENT)) {
+            tc_kind[count] = 4;
+            count++;
+        }
+        ret = get_bmd_timecode(avctx, tc + count, frame_rate, bmdTimecodeSerial, videoFrame);
+        if (ret != AVERROR(ENOENT)) {
+            tc_kind[count] = 5;
+            count++;
+        }
 #if BLACKMAGIC_DECKLINK_API_VERSION >= 0x0b000000
         ret = get_bmd_timecode(avctx, tc + count, frame_rate, bmdTimecodeRP188HighFrameRate, videoFrame);
-        if (ret != AVERROR(ENOENT))
+        if (ret != AVERROR(ENOENT)) {
+            tc_kind[count] = 6;
             count++;
+        }
 #endif
-        ret = get_bmd_timecode(avctx, tc + count, frame_rate, bmdTimecodeVITC, videoFrame);
-        if (ret != AVERROR(ENOENT))
-            count++;
-        ret = get_bmd_timecode(avctx, tc + count, frame_rate, bmdTimecodeVITCField2, videoFrame);
-        if (ret != AVERROR(ENOENT))
-            count++;
-        ret = get_bmd_timecode(avctx, tc + count, frame_rate, bmdTimecodeSerial, videoFrame);
-        if (ret != AVERROR(ENOENT))
-            count++;
        return count;
     }
     /* 50/60 fps content has alternating VITC1 and VITC2 timecode (see SMPTE ST
@@ -876,7 +890,8 @@ HRESULT decklink_input_callback::VideoInputFrameArrived(
             // Handle Timecode (if requested)
             if (ctx->tc_format) {
                 AVTimecode tcr[8];
-                int count = get_frame_timecode(avctx, ctx, &tcr[0], videoFrame);
+                uint8_t tcr_kind[8];
+                int count = get_frame_timecode(avctx, ctx, &tcr[0], &tcr_kind[0], videoFrame);
                 if (count > 0) {
                     char tcstr[AV_TIMECODE_STR_SIZE];
                     const char *tc = av_timecode_make_string(&tcr[0], tcstr, 0);
@@ -885,13 +900,26 @@ HRESULT decklink_input_callback::VideoInputFrameArrived(
                         uint8_t* packed_metadata;
 
                         if (av_cmp_q(ctx->video_st->r_frame_rate, av_make_q(60, 1)) < 1) {
-                            int size = sizeof(uint64_t) * (1 + count);
-                            uint64_t *sd = (uint64_t *)av_packet_new_side_data(&pkt, AV_PKT_DATA_S12M_TIMECODE, size);
+                            int sd_size = 8 + count * (8 + 4 + 16);
+                            uint8_t *sd = av_packet_new_side_data(&pkt, AV_PKT_DATA_S12M_TIMECODE, sd_size);
+                            uint32_t *sd_allocated = (uint32_t*)sd;
+                            *sd_allocated = sd_size;
+                            uint8_t *item_size = sd + 5;
+                            *item_size = 8 + 4 + 16;
 
                             if (sd) {
                                 *sd = count;
-                                for (int i = 0; i < count; i++)
-                                    *(sd + 1 + i) = av_timecode_expand_to_64bit(av_timecode_get_smpte_from_framenum(&tcr[i], 0));
+                                for (int i = 0; i < count; i++) {
+                                    uint8_t *sd_base = sd + 8 + (8 + 4 + 16) * (count - 1);
+                                    uint64_t *sd_tc = (uint64_t*)sd_base;
+                                    uint32_t *sd_id = (uint32_t*)(sd_base + 8);
+                                    char* sd_title = (char*)(sd_base + 8 + 4);
+                                    *sd_tc = av_timecode_expand_to_64bit(av_timecode_get_smpte_from_framenum(&tcr[i], 0));
+                                    *sd_id = 0; // TEMP
+                                    static const char* A[] = { "ATC_VITC", "ATC_VITC2", "ATC_LTC", "VITC", "VITC2", "VITC2", "9PIN", "HFRTC" };
+                                    memcpy(sd_title, A[tcr_kind[i]], strlen(A[tcr_kind[i]]));
+                                    memset(sd_title + strlen(A[tcr_kind[i]]), 0, 16 - strlen(A[tcr_kind[i]]));
+                                }
                             }
                         }
 

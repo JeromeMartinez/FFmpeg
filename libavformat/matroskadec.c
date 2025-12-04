@@ -49,6 +49,7 @@
 #include "libavutil/opt.h"
 #include "libavutil/pixdesc.h"
 #include "libavutil/time_internal.h"
+#include "libavutil/timecode.h"
 #include "libavutil/spherical.h"
 
 #include "libavcodec/bytestream.h"
@@ -3975,10 +3976,14 @@ static int matroska_parse_block_additional(MatroskaDemuxContext *matroska,
 
         size_t sd_size = 0;
         uint8_t *sd = av_packet_get_side_data(pkt, AV_PKT_DATA_S12M_TIMECODE, &sd_size);
-        uint64_t count = sd ? *((uint64_t*)sd) : 0;
+        uint8_t count = sd ? *((uint8_t*) (sd + 4)) : 0;
         if (!count) {
-            sd_size = sizeof(uint64_t) * (1 + track->add_block_timecode_count);
+            sd_size = 8 + track->add_block_timecode_count * (8 + 4 + 16);
             sd = av_packet_new_side_data(pkt, AV_PKT_DATA_S12M_TIMECODE, sd_size);
+            uint32_t *sd_allocated = (uint32_t*)sd;
+            *sd_allocated = sd_size;
+            uint8_t *item_size = sd + 5;
+            *item_size = 8 + 4 + 16;
             count = 0;
         }
 
@@ -3986,13 +3991,25 @@ static int matroska_parse_block_additional(MatroskaDemuxContext *matroska,
             av_log(matroska->ctx, AV_LOG_DEBUG, "There are more timecodes in the block than the count indicated in the track header, extra timecodes are ignored.\n");
         }
         else if (sd) {
-            uint64_t tc = *((uint64_t*)data);
+            uint64_t tc = AV_RB64(data);
             av_log(matroska->ctx, AV_LOG_DEBUG, "Reading SMPTE timecode from BlockAdditional: 0x%016lX (RFC 5484)\n", tc);
 
-            uint64_t *sd_64 = (uint64_t*)sd;
+            // header: 0-3 allocated size; 4 count; 5 byte size per item; 6 flags; 7 reserved
+            // flags: 0 id present; 1 title present
+            // content: 8 bytes tc; 4 bytes id; 16 bytes 0 terminated or 16 bytes UTF8 title
+
             count++;
-            *sd_64 = count;
-            AV_WB64(sd_64 + count, tc);
+            uint8_t *sd_count = (uint8_t*) (sd + 4);
+            *sd_count = count;
+            uint8_t *sd_base = sd + 8 + (8 + 4 + 16) * (count - 1);
+            uint64_t *sd_tc = (uint64_t*)sd_base;
+            uint32_t *sd_id = (uint32_t*)(sd_base + 8);
+            char* sd_title = (char*)(sd_base + 8 + 4);
+            *sd_tc = tc;
+            *sd_id = id;
+            static const char* A[] = { "Fake1", "Fake2_", "Fake3", "", "", "", "", "" };
+            memcpy(sd_title, A[count - 1], strlen(A[count - 1]));
+            memset(sd_title + strlen(A[count - 1]), 0, 16 - strlen(A[count - 1]));
         }
         
         return 0;
