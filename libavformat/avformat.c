@@ -873,3 +873,46 @@ int ff_format_io_close(AVFormatContext *s, AVIOContext **pb)
     *pb = NULL;
     return ret;
 }
+
+int av_timecode_add_to_side_data(AVFormatContext *ctx, AVPacket *pkt, unsigned flags, uint64_t tc, uint32_t id, const char *title)
+{
+    const int add_block_timecode_count = 4; //TODO
+    size_t sd_size = 0;
+    uint8_t *sd = av_packet_get_side_data(pkt, AV_PKT_DATA_S12M_TIMECODE, &sd_size);
+    uint8_t count = sd ? *((uint8_t*) (sd + 4)) : 0;
+    if (!count) {
+        sd_size = 8 + add_block_timecode_count * (8 + 4 + 16);
+        sd = av_packet_new_side_data(pkt, AV_PKT_DATA_S12M_TIMECODE, sd_size);
+        uint32_t *sd_allocated = (uint32_t*)sd;
+        *sd_allocated = sd_size;
+        uint8_t *item_size = sd + 5;
+        *item_size = 8 + 4 + 16;
+        count = 0;
+    }
+
+    if (count >= add_block_timecode_count) {
+        av_log(ctx, AV_LOG_DEBUG, "There are more timecodes in the block than the count indicated in the track header, extra timecodes are ignored.\n");
+    }
+    else if (sd) {
+        av_log(ctx, AV_LOG_DEBUG, "Reading SMPTE timecode from BlockAdditional: 0x%016lX (RFC 5484)\n", tc);
+
+        // header: 0-3 allocated size; 4 count; 5 byte size per item; 6 flags; 7 reserved
+        // flags: 0 id present; 1 title present
+        // content: 8 bytes tc; 4 bytes id; 16 bytes 0 terminated or 16 bytes UTF8 title
+
+        count++;
+        uint8_t *sd_count = (uint8_t*) (sd + 4);
+        *sd_count = count;
+        uint8_t *sd_base = sd + 8 + (8 + 4 + 16) * (count - 1);
+        uint64_t *sd_tc = (uint64_t*)sd_base;
+        uint32_t *sd_id = (uint32_t*)(sd_base + 8);
+        char* sd_title = (char*)(sd_base + 8 + 4);
+        *sd_tc = tc;
+        *sd_id = id;
+        size_t title_size = strlen(title);
+        memcpy(sd_title, title, title_size);
+        memset(sd_title + title_size, 0, 16 - title_size);
+    }
+    
+    return 0;
+}
