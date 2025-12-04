@@ -712,7 +712,24 @@ static int64_t get_pkt_pts(IDeckLinkVideoInputFrame_v14_2_1 *videoFrame,
     return pts;
 }
 
-static int get_bmd_timecode(AVFormatContext *avctx, AVTimecode *tc, AVRational frame_rate, BMDTimecodeFormat tc_format, IDeckLinkVideoInputFrame_v14_2_1 *videoFrame)
+static const char *BMDTimecodeFormat_to_label(BMDTimecodeFormat tc_format)
+{
+    switch(tc_format) {
+        case bmdTimecodeRP188VITC1: return "ATC_VITC";
+        case bmdTimecodeRP188VITC2: return "ATC_VITC2";
+        case bmdTimecodeRP188LTC: return "ATC_LTC";
+        case bmdTimecodeRP188Any: return "VITC";
+        case bmdTimecodeVITC: return "VITC";
+        case bmdTimecodeVITCField2: return "VITC2";
+        case bmdTimecodeSerial: return "9PIN";
+#if BLACKMAGIC_DECKLINK_API_VERSION >= 0x0b000000
+        case bmdTimecodeRP188HighFrameRate: return "HFRTC";
+#endif
+        default: return NULL;
+    }
+}
+
+static int get_bmd_timecode(AVFormatContext *avctx, AVTimecode *tc, const char **tc_kind, AVRational frame_rate, BMDTimecodeFormat tc_format, IDeckLinkVideoInputFrame_v14_2_1 *videoFrame)
 {
     IDeckLinkTimecode *timecode;
     int ret = AVERROR(ENOENT);
@@ -722,6 +739,7 @@ static int get_bmd_timecode(AVFormatContext *avctx, AVTimecode *tc, AVRational f
     int hfr = 0;
 #endif
     if (videoFrame->GetTimecode(tc_format, &timecode) == S_OK) {
+        *tc_kind = BMDTimecodeFormat_to_label(tc_format);
         uint8_t hh, mm, ss, ff;
         if (timecode->GetComponents(&hh, &mm, &ss, &ff) == S_OK) {
             int flags = (timecode->GetFlags() & bmdTimecodeIsDropFrame) ? AV_TIMECODE_FLAG_DROPFRAME : 0;
@@ -734,53 +752,39 @@ static int get_bmd_timecode(AVFormatContext *avctx, AVTimecode *tc, AVRational f
     return ret;
 }
 
-static int get_frame_timecode(AVFormatContext *avctx, decklink_ctx *ctx, AVTimecode *tc, IDeckLinkVideoInputFrame_v14_2_1 *videoFrame)
+static int get_frame_timecode(AVFormatContext *avctx, decklink_ctx *ctx, AVTimecode *tc, const char **tc_kind, IDeckLinkVideoInputFrame_v14_2_1 *videoFrame)
 {
     AVRational frame_rate = ctx->video_st->r_frame_rate;
     int ret;
     if (ctx->tc_format == (BMDTimecodeFormat)1) {
         int count = 0;
-        ret = get_bmd_timecode(avctx, tc + count, frame_rate, bmdTimecodeRP188VITC1, videoFrame);
-        if (ret != AVERROR(ENOENT))
-            count++;
-        ret = get_bmd_timecode(avctx, tc + count, frame_rate, bmdTimecodeRP188VITC2, videoFrame);
-        if (ret != AVERROR(ENOENT))
-            count++;
-        ret = get_bmd_timecode(avctx, tc + count, frame_rate, bmdTimecodeRP188LTC, videoFrame);
-        if (ret != AVERROR(ENOENT))
-            count++;
+        count += get_bmd_timecode(avctx, tc + count, tc_kind + count, frame_rate, bmdTimecodeRP188VITC1, videoFrame) != AVERROR(ENOENT);
+        count += get_bmd_timecode(avctx, tc + count, tc_kind + count, frame_rate, bmdTimecodeRP188VITC2, videoFrame) != AVERROR(ENOENT);
+        count += get_bmd_timecode(avctx, tc + count, tc_kind + count, frame_rate, bmdTimecodeRP188LTC, videoFrame) != AVERROR(ENOENT);
+        count += get_bmd_timecode(avctx, tc + count, tc_kind + count, frame_rate, bmdTimecodeVITC, videoFrame) != AVERROR(ENOENT);
+        count += get_bmd_timecode(avctx, tc + count, tc_kind + count, frame_rate, bmdTimecodeVITCField2, videoFrame) != AVERROR(ENOENT);
+        count += get_bmd_timecode(avctx, tc + count, tc_kind + count, frame_rate, bmdTimecodeSerial, videoFrame) != AVERROR(ENOENT);
 #if BLACKMAGIC_DECKLINK_API_VERSION >= 0x0b000000
-        ret = get_bmd_timecode(avctx, tc + count, frame_rate, bmdTimecodeRP188HighFrameRate, videoFrame);
-        if (ret != AVERROR(ENOENT))
-            count++;
+        count += get_bmd_timecode(avctx, tc + count, tc_kind + count, frame_rate, bmdTimecodeRP188HighFrameRate, videoFrame) != AVERROR(ENOENT);
 #endif
-        ret = get_bmd_timecode(avctx, tc + count, frame_rate, bmdTimecodeVITC, videoFrame);
-        if (ret != AVERROR(ENOENT))
-            count++;
-        ret = get_bmd_timecode(avctx, tc + count, frame_rate, bmdTimecodeVITCField2, videoFrame);
-        if (ret != AVERROR(ENOENT))
-            count++;
-        ret = get_bmd_timecode(avctx, tc + count, frame_rate, bmdTimecodeSerial, videoFrame);
-        if (ret != AVERROR(ENOENT))
-            count++;
        return count;
     }
     /* 50/60 fps content has alternating VITC1 and VITC2 timecode (see SMPTE ST
      * 12-2, section 7), so the native ordering of RP188Any (HFR, VITC1, LTC,
      * VITC2) would not work because LTC might not contain the field flag.
      * Therefore we query the types manually. */
-    if (ctx->tc_format == bmdTimecodeRP188Any && av_cmp_q(frame_rate, av_make_q(30, 1)) == 1) {
+    if (ctx->tc_format == bmdTimecodeRP188Any /*&& av_cmp_q(frame_rate, av_make_q(30, 1)) == 1*/) {
 #if BLACKMAGIC_DECKLINK_API_VERSION >= 0x0b000000
-       ret = get_bmd_timecode(avctx, tc, frame_rate, bmdTimecodeRP188HighFrameRate, videoFrame);
+       ret = get_bmd_timecode(avctx, tc, tc_kind, frame_rate, bmdTimecodeRP188HighFrameRate, videoFrame);
        if (ret == AVERROR(ENOENT))
 #endif
-           ret = get_bmd_timecode(avctx, tc, frame_rate, bmdTimecodeRP188VITC1, videoFrame);
+           ret = get_bmd_timecode(avctx, tc, tc_kind, frame_rate, bmdTimecodeRP188VITC1, videoFrame);
        if (ret == AVERROR(ENOENT))
-           ret = get_bmd_timecode(avctx, tc, frame_rate, bmdTimecodeRP188VITC2, videoFrame);
+           ret = get_bmd_timecode(avctx, tc, tc_kind, frame_rate, bmdTimecodeRP188VITC2, videoFrame);
        if (ret == AVERROR(ENOENT))
-           ret = get_bmd_timecode(avctx, tc, frame_rate, bmdTimecodeRP188LTC, videoFrame);
+           ret = get_bmd_timecode(avctx, tc, tc_kind, frame_rate, bmdTimecodeRP188LTC, videoFrame);
     } else {
-       ret = get_bmd_timecode(avctx, tc, frame_rate, ctx->tc_format, videoFrame);
+       ret = get_bmd_timecode(avctx, tc, tc_kind, frame_rate, ctx->tc_format, videoFrame);
     }
     return ret >= 0;
 }
@@ -878,7 +882,8 @@ HRESULT decklink_input_callback::VideoInputFrameArrived(
             // Handle Timecode (if requested)
             if (ctx->tc_format) {
                 AVTimecode tcr[8];
-                int count = get_frame_timecode(avctx, ctx, &tcr[0], videoFrame);
+                const char *tcr_kind[8];
+                int count = get_frame_timecode(avctx, ctx, &tcr[0], &tcr_kind[0], videoFrame);
                 if (count > 0) {
                     char tcstr[AV_TIMECODE_STR_SIZE];
                     const char *tc = av_timecode_make_string(&tcr[0], tcstr, 0);
@@ -887,13 +892,9 @@ HRESULT decklink_input_callback::VideoInputFrameArrived(
                         uint8_t* packed_metadata;
 
                         if (av_cmp_q(ctx->video_st->r_frame_rate, av_make_q(60, 1)) < 1) {
-                            int size = sizeof(uint64_t) * (1 + count);
-                            uint64_t *sd = (uint64_t *)av_packet_new_side_data(&pkt, AV_PKT_DATA_S12M_TIMECODE, size);
-
-                            if (sd) {
-                                *sd = count;
-                                for (int i = 0; i < count; i++)
-                                    *(sd + 1 + i) = av_timecode_expand_to_64bit(av_timecode_get_smpte_from_framenum(&tcr[i], 0));
+                            for (int i = 0; i < count; i++) {
+                                uint64_t tc = av_timecode_expand_to_64bit(av_timecode_get_smpte_from_framenum(&tcr[i], 0));
+                                av_packet_add_s12m_timecode_to_side_data(avctx, &pkt, S12M_TIMECODE_FLAG_ID_PRESENT | S12M_TIMECODE_FLAG_TITLE_PRESENT, tc, 0, tcr_kind[i]);
                             }
                         }
 

@@ -873,3 +873,84 @@ int ff_format_io_close(AVFormatContext *s, AVIOContext **pb)
     *pb = NULL;
     return ret;
 }
+
+#define add_block_timecode_count 4 //TODO
+static size_t s12m_timecode_get_size_per_item(unsigned flags)
+{
+    return 8 + 4 + 16;
+}
+
+static size_t s12m_timecode_get_size(unsigned flags)
+{
+    return add_block_timecode_count * s12m_timecode_get_size_per_item(flags);
+}
+
+static void s12m_timecode_init(uint8_t *sd, size_t sd_size, unsigned flags)
+{
+    uint32_t *sd_allocated = (uint32_t*)sd;
+    *sd_allocated = sd_size;
+    uint8_t *sd_count = (uint8_t*) (sd + 4);
+    *sd_count = 0;
+    uint8_t *item_size = sd + 5;
+    *item_size = s12m_timecode_get_size_per_item(flags);
+}
+
+static int av_packet_add_s12m_timecode_to_side_data_internal(AVFormatContext *ctx, uint8_t *sd, size_t sd_size, unsigned flags, uint64_t tc, uint32_t id, const char *title)
+{
+    // header: 0-3 allocated size; 4 count; 5 byte size per item; 6 flags; 7 reserved
+    // flags: 0 tc present; 1 id present; 2 title present
+    // content: 8 bytes tc; 4 bytes id; 16 bytes title
+
+    uint8_t *sd_count = (uint8_t*) (sd + 4);
+    uint8_t count = *sd_count;
+    uint8_t *item_size = sd + 5;
+
+    if (count >= add_block_timecode_count) {
+        av_log(ctx, AV_LOG_DEBUG, "There are more timecodes in the block than the count supported, extra timecodes are ignored.\n");
+        return 0; // not an actual error, just ignored, TODO: manage more tc
+    }
+    av_log(ctx, AV_LOG_DEBUG, "Reading SMPTE timecode from BlockAdditional: 0x%016lX (RFC 5484)\n", tc);
+
+    *sd_count = count + 1;
+    uint8_t *sd_base = sd + 8 + *item_size * count;
+    uint64_t *sd_tc = (uint64_t*)sd_base;
+    uint32_t *sd_id = (uint32_t*)(sd_base + 8);
+    char* sd_title = (char*)(sd_base + 8 + 4);
+    *sd_tc = tc;
+    *sd_id = id;
+    size_t title_size = title ? strlen(title) : 0;
+    if (title_size)
+        memcpy(sd_title, title, title_size);
+    memset(sd_title + title_size, 0, 16 - title_size);
+    
+    return 0;
+}
+
+int av_packet_add_s12m_timecode_to_side_data(AVFormatContext *ctx, AVPacket *pkt, unsigned flags, uint64_t tc, uint32_t id, const char *title)
+{
+    size_t sd_size = 0;
+    uint8_t *sd = av_packet_get_side_data(pkt, AV_PKT_DATA_S12M_TIMECODE, &sd_size);
+    if (!sd) {
+        sd_size = s12m_timecode_get_size(flags);
+        sd = av_packet_new_side_data(pkt, AV_PKT_DATA_S12M_TIMECODE, sd_size);
+        if (!sd)
+            return 1;
+        s12m_timecode_init(sd, sd_size, flags);
+    }
+    return av_packet_add_s12m_timecode_to_side_data_internal(ctx, sd, sd_size, flags, tc, id, title);
+}
+
+// Add timecode track information to track information (no actual data)
+int av_packet_side_data_add_s12m_timecode_to(AVFormatContext *ctx, AVPacketSideData **psd, int *pnb_sd, unsigned flags, uint64_t tc, uint32_t id, const char *title)
+{
+    size_t sd_size = 0;
+    const AVPacketSideData *sd = av_packet_side_data_get(*psd, *pnb_sd, AV_PKT_DATA_S12M_TIMECODE);
+    if (!sd) {
+        sd_size = s12m_timecode_get_size(flags);
+        sd = av_packet_side_data_new(psd, pnb_sd, AV_PKT_DATA_S12M_TIMECODE, sd_size, 0);
+        if (!sd || !sd->data)
+            return 1;
+        s12m_timecode_init(sd->data, sd_size, flags);
+    }
+    return av_packet_add_s12m_timecode_to_side_data_internal(ctx, sd->data, sd->size, flags, tc, id, title);
+}

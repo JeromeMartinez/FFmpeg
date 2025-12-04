@@ -427,19 +427,46 @@ static void dump_dovi_conf(void *ctx, const AVPacketSideData *sd,
 }
 
 static void dump_s12m_timecode(void *ctx, AVRational avg_frame_rate, const AVPacketSideData *sd,
-                               int log_level)
+                               int log_level, const char *indent)
 {
-    const uint32_t *tc = (const uint32_t *)sd->data;
-
-    if ((sd->size != sizeof(uint32_t) * 4) || (tc[0] > 3)) {
+    if (sd->size < sizeof(uint32_t)) {
         av_log(ctx, AV_LOG_ERROR, "invalid data\n");
         return;
     }
-
-    for (int j = 1; j <= tc[0]; j++) {
+  
+    uint8_t *sd_count = (uint8_t*) (sd->data + 4);
+    uint8_t count = *sd_count;
+    for (int j = 0; j < count ; j++) {
+        uint8_t *sd_base = sd->data + 8 + (8 + 4 + 16) * j;
+        uint64_t *sd_tc = (uint64_t*)sd_base;
+        uint32_t *sd_id = (uint32_t*)(sd_base + 8);
+        char* sd_title = (char*)(sd_base + 8 + 4);
         char tcbuf[AV_TIMECODE_STR_SIZE];
-        av_timecode_make_smpte_tc_string2(tcbuf, avg_frame_rate, tc[j], 0, 0);
-        av_log(ctx, log_level, "timecode - %s%s", tcbuf, j != tc[0] ? ", " : "");
+        uint64_t id = *sd_id;
+        uint64_t tc = *sd_tc;
+        av_timecode_make_smpte_tc_string2(tcbuf, avg_frame_rate, av_timecode_parse_from_64bit(tc), 0, 0);
+        char tctitlebuf[17];
+        int k = 0;
+        for (; k < 16; k++)
+            if (!sd_title[k])
+                break;
+        if (k >= 16) {
+            memcpy(tctitlebuf, sd_title, k);
+            tctitlebuf[k] = '\0';
+            sd_title = tctitlebuf;
+        }
+        if (j) {
+            const char *name = av_packet_side_data_name(AV_PKT_DATA_S12M_TIMECODE);
+            av_log(ctx, log_level, "\n%s  %s: ", indent, name ? name : "");
+        }
+        char id_string[33];
+        if (id) {
+            snprintf(id_string, sizeof(id_string), "%" PRIu64, id);
+        }
+        else {
+            id_string[0] = '\0';
+        }
+        av_log(ctx, log_level, "%s%s%s%s%s", id ? "id: " : "", id_string, *sd_title && id ? " " : "", *sd_title ? "title: " : "", *sd_title ? sd_title : "");
     }
 }
 
@@ -521,7 +548,7 @@ static void dump_sidedata(void *ctx, const AVPacketSideData *side_data, int nb_s
             dump_dovi_conf(ctx, sd, log_level);
             break;
         case AV_PKT_DATA_S12M_TIMECODE:
-            dump_s12m_timecode(ctx, avg_frame_rate, sd, log_level);
+            dump_s12m_timecode(ctx, avg_frame_rate, sd, log_level, indent);
             break;
         case AV_PKT_DATA_AMBIENT_VIEWING_ENVIRONMENT:
             dump_ambient_viewing_environment_metadata(ctx, sd, log_level);

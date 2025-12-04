@@ -3011,6 +3011,31 @@ attribute_deprecated
 AVRational av_stream_get_codec_timebase(const AVStream *st);
 #endif
 
+/**
+ *
+ */
+#define S12M_TIMECODE_FLAG_TC_PRESENT 1
+#define S12M_TIMECODE_FLAG_ID_PRESENT 2
+#define S12M_TIMECODE_FLAG_TITLE_PRESENT 4
+typedef struct S12MTimecodeData {
+    unsigned flags;
+    uint32_t id;
+    uint64_t tc;
+    const char *title; /**< title may NOT be null terminated */
+    unsigned title_size;   /**< Size of title */
+} S12MTimecodeData;
+
+/**
+ *
+ */
+int av_packet_add_s12m_timecode_to_side_data(AVFormatContext *ctx, AVPacket *pkt, unsigned flags, uint64_t tc, uint32_t id, const char *title);
+S12MTimecodeData av_packet_get_s12m_timecode(AVFormatContext *ctx, const AVPacket *pkt, unsigned pos);
+
+/**
+ *
+ */
+int av_packet_side_data_add_s12m_timecode_to(AVFormatContext *ctx, AVPacketSideData **psd, int *pnb_sd, unsigned flags, uint64_t tc, uint32_t id, const char *title);
+S12MTimecodeData av_packet_s12m_timecode_get(AVFormatContext *ctx, const AVPacketSideData *psd, int pnb_sd, unsigned pos);
 
 /**
  * @}
