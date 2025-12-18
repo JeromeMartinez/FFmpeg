@@ -31,10 +31,10 @@ extern "C" {
 #include "libavformat/internal.h"
 }
 
-#include <DeckLinkAPIVersion.h>
-#include <DeckLinkAPI.h>
+#include "DeckLinkAPIVersion.h"
+#include "DeckLinkAPI.h"
 #if BLACKMAGIC_DECKLINK_API_VERSION >= 0x0e030000
-#include <DeckLinkAPI_v14_2_1.h>
+#include "DeckLinkAPI_v14_2_1.h"
 #endif
 
 #define IID_IUnknown (REFIID){0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0xC0,0x00,0x00,0x00,0x00,0x00,0x00,0x46}

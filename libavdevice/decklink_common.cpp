@@ -25,14 +25,14 @@ extern "C" {
 #include "libavformat/internal.h"
 }
 
-#include <DeckLinkAPIVersion.h>
-#include <DeckLinkAPI.h>
+#include "DeckLinkAPIVersion.h"
+#include "DeckLinkAPI.h"
 #if BLACKMAGIC_DECKLINK_API_VERSION >= 0x0e030000
-#include <DeckLinkAPI_v14_2_1.h>
+#include "DeckLinkAPI_v14_2_1.h"
 #endif
 
 #ifdef _WIN32
-#include <DeckLinkAPI_i.c>
+#include "DeckLinkAPI_i.c"
 #else
 /* The file provided by the SDK is known to be missing prototypes, which doesn't
    cause issues with GCC since the warning doesn't apply to C++ files.  However
@@ -42,7 +42,7 @@ extern "C" {
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wmissing-prototypes"
 #endif
-#include <DeckLinkAPIDispatch.cpp>
+#include "DeckLinkAPIDispatch.cpp"
 #ifdef __clang__
 #pragma clang diagnostic pop
 #endif

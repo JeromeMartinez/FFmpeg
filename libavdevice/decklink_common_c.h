@@ -24,7 +24,7 @@
 #define AVDEVICE_DECKLINK_COMMON_C_H
 
 #include <stdint.h>
-#include <DeckLinkAPIVersion.h>
+#include "DeckLinkAPIVersion.h"
 
 #include "libavutil/log.h"
 

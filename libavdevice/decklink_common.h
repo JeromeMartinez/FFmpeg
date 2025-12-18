@@ -23,7 +23,7 @@
 #ifndef AVDEVICE_DECKLINK_COMMON_H
 #define AVDEVICE_DECKLINK_COMMON_H
 
-#include <DeckLinkAPIVersion.h>
+#include "DeckLinkAPIVersion.h"
 #if BLACKMAGIC_DECKLINK_API_VERSION < 0x0b000000
 #define IID_IDeckLinkProfileAttributes IID_IDeckLinkAttributes
 #define IDeckLinkProfileAttributes IDeckLinkAttributes
