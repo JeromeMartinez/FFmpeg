@@ -910,15 +910,12 @@ HRESULT decklink_input_callback::VideoInputFrameArrived(
                             if (sd) {
                                 *sd = count;
                                 for (int i = 0; i < count; i++) {
-                                    uint8_t *sd_base = sd + 8 + (8 + 4 + 16) * (count - 1);
-                                    uint64_t *sd_tc = (uint64_t*)sd_base;
-                                    uint32_t *sd_id = (uint32_t*)(sd_base + 8);
-                                    char* sd_title = (char*)(sd_base + 8 + 4);
-                                    *sd_tc = av_timecode_expand_to_64bit(av_timecode_get_smpte_from_framenum(&tcr[i], 0));
-                                    *sd_id = 0; // TEMP
+                                    uint64_t tc = av_timecode_expand_to_64bit(av_timecode_get_smpte_from_framenum(&tcr[i], 0));
+                                    size_t tc_kind = tcr_kind[i];
+                                    if (tc_kind > 7)
+                                        av_log(ctx, AV_LOG_ERROR, "******* TC kind unknown.\n");
                                     static const char* A[] = { "ATC_VITC", "ATC_VITC2", "ATC_LTC", "VITC", "VITC2", "VITC2", "9PIN", "HFRTC" };
-                                    memcpy(sd_title, A[tcr_kind[i]], strlen(A[tcr_kind[i]]));
-                                    memset(sd_title + strlen(A[tcr_kind[i]]), 0, 16 - strlen(A[tcr_kind[i]]));
+                                    av_timecode_add_to_side_data(avctx, &pkt, 3 /* id + title */, tc, 0, A[tc_kind]);
                                 }
                             }
                         }

@@ -28,6 +28,8 @@
 #define AVUTIL_TIMECODE_H
 
 #include <stdint.h>
+#include "libavformat/avformat.h"
+#include "libavcodec/packet.h"
 #include "rational.h"
 
 #define AV_TIMECODE_STR_SIZE 23
@@ -217,5 +219,7 @@ uint64_t av_timecode_expand_to_64bit(uint32_t tc32);
  * @return     A 32-bit SMPTE timecode
  */
 uint32_t av_timecode_parse_from_64bit(uint64_t tc64);
+
+int av_timecode_add_to_side_data(AVFormatContext *ctx, AVPacket *pkt, unsigned flags, uint64_t tc, uint32_t id, const char *title);
 
 #endif /* AVUTIL_TIMECODE_H */

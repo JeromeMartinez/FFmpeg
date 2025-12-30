@@ -4155,6 +4155,8 @@ static int mkv_write_block(void *logctx, MatroskaMuxContext *mkv,
                     uint8_t *payload = timecode_buf[i];
                     AV_WB64(payload, *sd_tc);
                     memcpy(track->timecode_label[i], sd_title, 16);
+                    av_log(logctx, AV_LOG_ERROR, "timecode_label %s\n", sd_title);
+                    
                     
                     av_log(logctx, AV_LOG_DEBUG, "Writing SMPTE timecode from side data, pos %"PRIu64", to BlockAdditional: 0x%016lX (RFC 5484)\n", i + 1, *sd_tc);
 
