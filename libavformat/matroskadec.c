@@ -260,6 +260,7 @@ typedef struct MatroskaBlockAdditionMapping {
     char *name;
     uint64_t type;
     EbmlBin extradata;
+    char *title;
 } MatroskaBlockAdditionMapping;
 
 typedef struct MatroskaTrack {
@@ -342,6 +343,7 @@ typedef struct MatroskaTagTarget {
     uint64_t trackuid;
     uint64_t chapteruid;
     uint64_t attachuid;
+    uint64_t blockaddid;
 } MatroskaTagTarget;
 
 typedef struct MatroskaTags {
@@ -450,7 +452,7 @@ typedef struct MatroskaDemuxContext {
 // Removing the sizes breaks MSVC.
 static EbmlSyntax ebml_syntax[3], matroska_segment[9], matroska_track_video_color[15], matroska_track_video[19],
                   matroska_track[33], matroska_track_encoding[6], matroska_track_encodings[2],
-                  matroska_track_combine_planes[2], matroska_track_operation[2], matroska_block_addition_mapping[5], matroska_tracks[2],
+                  matroska_track_combine_planes[2], matroska_track_operation[2], matroska_block_addition_mapping[6], matroska_tracks[2],
                   matroska_attachments[2], matroska_chapter_entry[9], matroska_chapter[6], matroska_chapters[2],
                   matroska_index_entry[3], matroska_index[2], matroska_tag[3], matroska_tags[2], matroska_seekhead[2],
                   matroska_blockadditions[2], matroska_blockgroup[8], matroska_cluster_parsing[8];
@@ -605,6 +607,7 @@ static EbmlSyntax matroska_block_addition_mapping[] = {
     { MATROSKA_ID_BLKADDIDNAME,       EBML_STR,  0, 0, offsetof(MatroskaBlockAdditionMapping, name) },
     { MATROSKA_ID_BLKADDIDTYPE,       EBML_UINT, 0, 0, offsetof(MatroskaBlockAdditionMapping, type), { .u = MATROSKA_BLOCK_ADD_ID_TYPE_DEFAULT } },
     { MATROSKA_ID_BLKADDIDEXTRADATA,  EBML_BIN,  0, 0, offsetof(MatroskaBlockAdditionMapping, extradata) },
+    { MATROSKA_ID_BLKADDIDTYPE,       EBML_UTF8, 0, 0, offsetof(MatroskaBlockAdditionMapping, title) }, //TODO: fake ID, used here for freeing the char* automatically
     CHILD_OF(matroska_track)
 };
 
@@ -732,6 +735,7 @@ static EbmlSyntax matroska_tagtargets[] = {
     { MATROSKA_ID_TAGTARGETS_TRACKUID,   EBML_UINT, 0, 0, offsetof(MatroskaTagTarget, trackuid),   { .u = 0 } },
     { MATROSKA_ID_TAGTARGETS_CHAPTERUID, EBML_UINT, 0, 0, offsetof(MatroskaTagTarget, chapteruid), { .u = 0 } },
     { MATROSKA_ID_TAGTARGETS_ATTACHUID,  EBML_UINT, 0, 0, offsetof(MatroskaTagTarget, attachuid),  { .u = 0 } },
+    { MATROSKA_ID_TAGTARGETS_BLOCKADDID, EBML_UINT, 0, 0, offsetof(MatroskaTagTarget, blockaddid), { .u = 0 } },
     CHILD_OF(matroska_tag)
 };
 
@@ -1847,6 +1851,35 @@ static void matroska_convert_tag(AVFormatContext *s, EbmlList *list,
     ff_metadata_conv(metadata, NULL, ff_mkv_metadata_conv);
 }
 
+static void matroska_convert_blockaddid_tag(AVFormatContext *s, EbmlList *list,
+                                 const EbmlList *mappings_list, uint64_t mappings_id)
+{
+    MatroskaTag *tags = list->elem;
+    MatroskaBlockAdditionMapping *mappings = mappings_list->elem;
+    int i;
+
+    for (i = 0; i < list->nb_elem; i++) {
+        const char *lang = tags[i].lang &&
+                           strcmp(tags[i].lang, "und") ? tags[i].lang : NULL;
+                           
+        if (lang)
+            continue; // Only the default one
+
+        if (!tags[i].name) {
+            av_log(s, AV_LOG_WARNING, "Skipping invalid tag with no TagName.\n");
+            continue;
+        }
+        for (int j = 0; j < mappings_list->nb_elem; j++) {
+            MatroskaBlockAdditionMapping *mapping = &mappings[j];
+            uint64_t id = mapping->value;
+            if (mappings_id != id)
+                continue;
+            av_log(s, AV_LOG_ERROR, "blockaddid %"PRId64", title is %s\n", id, tags[i].string);
+            mapping->title = av_strdup(tags[i].string);
+        }
+    }
+}
+
 static void matroska_convert_tags(AVFormatContext *s)
 {
     MatroskaDemuxContext *matroska = s->priv_data;
@@ -1894,7 +1927,12 @@ static void matroska_convert_tags(AVFormatContext *s)
             for (j = 0; j < matroska->tracks.nb_elem; j++) {
                 if (track[j].uid == tags[i].target.trackuid &&
                     track[j].stream) {
-                    matroska_convert_tag(s, &tags[i].tag,
+                    if (tags[i].target.blockaddid) {
+                        matroska_convert_blockaddid_tag(s, &tags[i].tag,
+                                         &track->block_addition_mappings, tags[i].target.blockaddid);
+                    }
+                    else 
+                        matroska_convert_tag(s, &tags[i].tag,
                                          &track[j].stream->metadata, NULL);
                     found = 1;
                }
@@ -3979,8 +4017,7 @@ static int matroska_parse_block_additional(MatroskaDemuxContext *matroska,
         tc_kind++;
         if (tc_kind >= 3)
             tc_kind = 0;
-        static const char* A[] = { "Fake1", "Fake2", "Fake3", "", "", "", "", "" };
-        return av_timecode_add_to_side_data(matroska->ctx, pkt, 3 /* id + title */, tc, id, A[tc_kind]);
+        return av_timecode_add_to_side_data(matroska->ctx, pkt, 3 /* id + title */, tc, id, mapping->title);
     }
     default:
         break;
