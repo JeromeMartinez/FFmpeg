@@ -48,7 +48,9 @@ typedef struct SideDataQueue {
     pthread_cond_t cond;
 } SideDataQueue;
 
-extern SideDataQueue sd_queues[1]; //TODO: by stream_index
+#define SD_OST_MAX 8
+extern SideDataQueue sd_queues[SD_OST_MAX][1]; //TODO: by stream_index
+extern void* sd_ost[SD_OST_MAX];
 
 typedef struct Timestamp {
     int64_t    ts;
