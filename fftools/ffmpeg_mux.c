@@ -277,7 +277,15 @@ static int write_packet(Muxer *mux, OutputStream *ost, AVPacket *pkt)
 
     AVStream *st = s->streams[pkt->stream_index];
     if (st->codecpar->codec_type == AVMEDIA_TYPE_VIDEO) {
-        side_data_fill(pkt, sd_queues, 0); //TODO: by stream_index
+        int i = 0;
+        for (; i < SD_OST_MAX; i++) {
+            if (ost == sd_ost[i]) {
+                break;
+            }
+        }
+        if (i < SD_OST_MAX) {
+            side_data_fill(pkt, sd_queues[i], 0); //TODO: by stream_index
+        }
     }
 
     fs = filesize(s->pb);
