@@ -782,7 +782,8 @@ static int side_data_queue(const AVPacket *pkt, SideDataQueue *queues, int index
     return 0;
 }
 
-SideDataQueue sd_queues[1]; //TODO: by stream_index
+SideDataQueue sd_queues[SD_OST_MAX][1]; //TODO: by stream_index
+void* sd_ost[SD_OST_MAX];
 
 static int input_thread(void *arg)
 {
@@ -807,6 +808,10 @@ static int input_thread(void *arg)
     // Find the video stream index
     int video_stream_index = -1;
     int nb_streams = f->ctx->nb_streams;
+    int sd_ost_max = SD_OST_MAX;
+    while (sd_ost_max && !sd_ost[sd_ost_max - 1]) {
+        sd_ost_max--;
+    }
     for (int i = 0; i < nb_streams; i++) {
         AVStream *st = f->ctx->streams[i];
         if (st->codecpar->codec_type == AVMEDIA_TYPE_VIDEO) {
@@ -815,7 +820,9 @@ static int input_thread(void *arg)
                 video_stream_index = -1;
                 break;
             }
-            side_data_queue_init(&sd_queues[0]); //TODO: by stream_index
+            for (size_t i = 0; i < sd_ost_max; i++) {
+                side_data_queue_init(&sd_queues[i][0]); //TODO: by stream_index
+            }
             video_stream_index = i;
         }
     }
@@ -887,9 +894,11 @@ static int input_thread(void *arg)
         }
 
         if (dt.pkt_demux->side_data_elems && dt.pkt_demux->stream_index == video_stream_index) {
-            int ret = side_data_queue(dt.pkt_demux, sd_queues, 0); //TODO: by stream_index
+            for (size_t i = 0; i < sd_ost_max; i++) {
+            int ret = side_data_queue(dt.pkt_demux, sd_queues[i], 0); //TODO: by stream_index
             if (ret < 0) {
                 av_log(d, AV_LOG_ERROR, "Error during side data queue: %s\n", av_err2str(ret));
+            }
             }
         }
 

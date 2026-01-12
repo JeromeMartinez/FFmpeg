@@ -746,7 +746,21 @@ static void print_stream_maps(void)
         }
     }
 
+    for (size_t i = 0; i < SD_OST_MAX; i++) {
+        sd_ost[i] = 0;
+    }
+
     for (OutputStream *ost = ost_iter(NULL); ost; ost = ost_iter(ost)) {
+        for (size_t i = 0; i < SD_OST_MAX; i++) {
+            if (sd_ost[i]) {
+                continue;
+            }
+            if (i < SD_OST_MAX) {
+                sd_ost[i] = ost;
+            }
+            break;
+        }
+
         if (ost->attachment_filename) {
             /* an attached file */
             av_log(NULL, AV_LOG_INFO, "  File %s -> Stream #%d:%d\n",
