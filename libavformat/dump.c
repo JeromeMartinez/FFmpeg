@@ -475,15 +475,15 @@ static void dump_sidedata(void *ctx, const AVPacketSideData *side_data, int nb_s
     int i;
 
     if (nb_side_data)
-        av_log(ctx, AV_LOG_ERROR, "%sSide data:\n", indent);
+        av_log(ctx, log_level, "%sSide data:\n", indent);
 
     for (i = 0; i < nb_side_data; i++) {
         const AVPacketSideData *sd = &side_data[i];
         const char *name = av_packet_side_data_name(sd->type);
 
-        av_log(ctx, AV_LOG_ERROR, "%s  ", indent);
+        av_log(ctx, log_level, "%s  ", indent);
         if (name)
-            av_log(ctx, AV_LOG_ERROR, "%s: ", name);
+            av_log(ctx, log_level, "%s: ", name);
         switch (sd->type) {
         case AV_PKT_DATA_PARAM_CHANGE:
             dump_paramchange(ctx, sd, log_level);
@@ -521,7 +521,7 @@ static void dump_sidedata(void *ctx, const AVPacketSideData *side_data, int nb_s
             dump_dovi_conf(ctx, sd, log_level);
             break;
         case AV_PKT_DATA_S12M_TIMECODE:
-            dump_s12m_timecode(ctx, avg_frame_rate, sd, log_level);
+            //dump_s12m_timecode(ctx, avg_frame_rate, sd, log_level);
             break;
         case AV_PKT_DATA_AMBIENT_VIEWING_ENVIRONMENT:
             dump_ambient_viewing_environment_metadata(ctx, sd, log_level);

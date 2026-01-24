@@ -904,7 +904,12 @@ HRESULT decklink_input_callback::VideoInputFrameArrived(
                         if (av_cmp_q(ctx->video_st->r_frame_rate, av_make_q(60, 1)) < 1) {
                             for (int i = 0; i < count; i++) {
                                 uint64_t tc = av_timecode_expand_to_64bit(av_timecode_get_smpte_from_framenum(&tcr[i], 0));
-                                av_timecode_add_to_side_data(avctx, &pkt, 3 /* id + title */, tc, 0, NULL);
+                                char B[4];
+                                B[0] = '0' + ( tcr_kind[i]        / 100);
+                                B[1] = '0' + ((tcr_kind[i] % 100) / 10 );
+                                B[2] = '0' + ((tcr_kind[i] % 10 )      );
+                                B[4] = '\0';
+                                av_timecode_add_to_side_data(avctx, &pkt, 3 /* id + title */, tc, 0, B);
                             }
                         }
 
